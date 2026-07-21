@@ -16,7 +16,8 @@
   "scripts": {
     "build": "tsc",
     "test": "tsx src/test.ts",
-    "dev": "tsx src/test.ts"
+    "dev": "tsx src/test.ts",
+    "explorer": "tsx scripts/generate-explorer.ts"
   },
   "keywords": [],
   "author": "",
