@@ -1,3 +1,7 @@
+// ============================================
+// TYPES
+// ============================================
+
 export interface IPlugin {
   name: string;
   version: string;
@@ -15,6 +19,7 @@ export interface ICapability {
 export interface IWorkflow {
   name: string;
   description?: string;
+  allowed?: IAllowedGuard[]; // ← TAMBAHAN!
   steps: IStep[];
 }
 
@@ -24,8 +29,23 @@ export interface IStep {
   dependsOn?: string[];
 }
 
+// ===== GUARD =====
+export interface IAllowedGuard {
+  key: string;          // 'role' atau 'status'
+  value: any;           // 'TREASURER' atau 'WAITING_APPROVAL'
+  source: 'context' | 'input'; // Dari mana ambil?
+  operator?: 'eq' | 'neq' | 'in' | 'nin'; // Optional
+}
+
+// ===== CONTEXT =====
 export interface IContext {
   id: string;
   variables: Map<string, any>;
+  steps: Map<string, any>;
   input: any;
+  context: Map<string, any>; // ← GLOBAL CONTEXT (Map!)
 }
+
+// ===== CONTEXT HELPERS =====
+export type ContextValue = any;
+export type ContextKey = string;

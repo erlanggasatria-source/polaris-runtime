@@ -1,9 +1,34 @@
-import { IPlugin, ICapability, IWorkflow, IContext } from './types';
+import { IPlugin, ICapability, IWorkflow, IContext, IAllowedGuard } from './types';
 
 export class PolarisRuntime {
   private capabilities: Map<string, ICapability> = new Map();
   private workflows: Map<string, IWorkflow> = new Map();
+  
+  // ===== GLOBAL CONTEXT =====
+  private globalContext: Map<string, any> = new Map();
+  
+  // ===== ALLOWED WORKFLOW =====
+  private allowedContextWorkflow: string | null = null;
 
+  // ===== SET ALLOWED WORKFLOW =====
+  setAllowedContextWorkflow(workflowPath: string): void {
+    this.allowedContextWorkflow = workflowPath;
+    console.log(`🔒 Allowed context workflow: ${workflowPath}`);
+  }
+
+  getAllowedContextWorkflow(): string | null {
+    return this.allowedContextWorkflow;
+  }
+
+  // ===== UPDATE GLOBAL CONTEXT =====
+  private updateGlobalContext(updates: Record<string, any>): void {
+    for (const [key, value] of Object.entries(updates)) {
+      this.globalContext.set(key, value);
+    }
+    console.log('✅ Global context updated:', Object.fromEntries(this.globalContext));
+  }
+
+  // ===== REGISTER =====
   register(plugins: IPlugin[]): void {
     for (const plugin of plugins) {
       this.registerPlugin(plugin);
@@ -48,6 +73,33 @@ export class PolarisRuntime {
     }
   }
 
+  // ===== CHECK GUARD =====
+  private checkGuard(guard: IAllowedGuard, input: any): boolean {
+    let actualValue: any;
+
+    if (guard.source === 'context') {
+      actualValue = this.globalContext.get(guard.key);
+    } else { // input
+      actualValue = input[guard.key];
+    }
+
+    const operator = guard.operator || 'eq';
+
+    switch (operator) {
+      case 'eq':
+        return actualValue === guard.value;
+      case 'neq':
+        return actualValue !== guard.value;
+      case 'in':
+        return Array.isArray(guard.value) && guard.value.includes(actualValue);
+      case 'nin':
+        return Array.isArray(guard.value) && !guard.value.includes(actualValue);
+      default:
+        return false;
+    }
+  }
+
+  // ===== EXECUTE =====
   async execute(workflowPath: string, input: any): Promise<any> {
     const workflow = this.workflows.get(workflowPath);
     if (!workflow) {
@@ -56,19 +108,56 @@ export class PolarisRuntime {
       throw new Error(`Workflow "${workflowPath}" not found`);
     }
 
+    // ===== CHECK GUARD =====
+    if (workflow.allowed && workflow.allowed.length > 0) {
+      console.log(`\n🛡️ Checking guards for: ${workflowPath}`);
+      let allPassed = true;
+      for (const guard of workflow.allowed) {
+        const passed = this.checkGuard(guard, input);
+        console.log(`   ${guard.source}.${guard.key} ${guard.operator || 'eq'} ${guard.value} → ${passed ? '✅' : '❌'}`);
+        if (!passed) {
+          allPassed = false;
+          break;
+        }
+      }
+
+      if (!allPassed) {
+        console.error(`❌ Workflow "${workflowPath}" not allowed to execute`);
+        throw new Error(`Workflow "${workflowPath}" not allowed to execute`);
+      }
+    }
+
+    // ===== BUILD CONTEXT =====
     const context: IContext = {
       id: `ctx_${Date.now()}`,
       variables: new Map(),
-      input
+      steps: new Map(),
+      input,
+      context: new Map(this.globalContext) // ← COPY global context!
     };
 
     console.log(`\n🚀 Executing: ${workflowPath}`);
     console.log(`   📝 ${workflow.description || 'No description'}`);
+    console.log(`   📦 Global context:`, Object.fromEntries(this.globalContext));
 
     let result = input;
+
     for (const step of workflow.steps) {
       try {
         console.log(`  ▶️  Step: ${step.name}`);
+
+        let stepInput: any;
+        if (step.dependsOn && step.dependsOn.length > 0) {
+          stepInput = {};
+          for (const dep of step.dependsOn) {
+            const depResult = context.steps.get(dep);
+            if (depResult) {
+              stepInput = { ...stepInput, ...depResult };
+            }
+          }
+        } else {
+          stepInput = result;
+        }
 
         const cap = this.capabilities.get(step.useCapability);
         if (!cap) {
@@ -80,8 +169,10 @@ export class PolarisRuntime {
         console.log(`     ⚡ ${step.useCapability}`);
         console.log(`     📝 ${cap.description || 'No description'}`);
 
-        result = await cap.run(result, context);
-        context.variables.set(step.name, result);
+        result = await cap.run(stepInput, context);
+        context.steps.set(step.name, result);
+        console.log(context);
+
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`❌ Step "${step.name}" failed:`, message);
@@ -91,10 +182,21 @@ export class PolarisRuntime {
       }
     }
 
+    // ===== ALLOWED WORKFLOW: UPDATE GLOBAL CONTEXT =====
+    if (workflowPath === this.allowedContextWorkflow) {
+      const lastStepName = workflow.steps[workflow.steps.length - 1]?.name;
+      const contextResult = lastStepName ? context.steps.get(lastStepName) : result;
+
+      if (contextResult && typeof contextResult === 'object') {
+        this.updateGlobalContext(contextResult);
+      }
+    }
+
     console.log(`✅ Workflow completed: ${workflowPath}`);
     return result;
   }
 
+  // ===== EXECUTE CAPABILITY =====
   async executeCapability(capPath: string, input: any): Promise<any> {
     const cap = this.capabilities.get(capPath);
     if (!cap) {
@@ -110,7 +212,9 @@ export class PolarisRuntime {
       const context: IContext = {
         id: `cap_${Date.now()}`,
         variables: new Map(),
-        input
+        steps: new Map(),
+        input,
+        context: new Map(this.globalContext)
       };
 
       const result = await cap.run(input, context);
@@ -124,11 +228,25 @@ export class PolarisRuntime {
     }
   }
 
+  // ===== LIST =====
   listCapabilities(): string[] {
     return Array.from(this.capabilities.keys());
   }
 
   listWorkflows(): string[] {
     return Array.from(this.workflows.keys());
+  }
+
+  listPlugins(): string[] {
+    const pluginNames = new Set<string>();
+    for (const cap of this.capabilities.keys()) {
+      const plugin = cap.split('/')[0];
+      pluginNames.add(plugin);
+    }
+    return Array.from(pluginNames);
+  }
+
+  getGlobalContext(): Map<string, any> {
+    return this.globalContext;
   }
 }

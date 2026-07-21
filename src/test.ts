@@ -1,44 +1,84 @@
-import { PolarisRuntime } from './core/polaris-core.js';
-import { DummyPlugin } from './plugins/dummy.js';
+import { PolarisRuntime } from './core/runtime';
+import { DummyPlugin } from './plugins/dummy.plugin';
+import { WorkspacePlugin } from './plugins/workspace.plugin';
 
 async function main() {
   const runtime = new PolarisRuntime();
 
   console.log('📦 Registering plugins...\n');
-  runtime.register([DummyPlugin, DummyPlugin ]);
+  runtime.register([WorkspacePlugin, DummyPlugin]);
+
+  // ===== SET ALLOWED WORKFLOW =====
+  runtime.setAllowedContextWorkflow('workspace/wf-set-context');
+  console.log(`\n🔒 Allowed workflow: ${runtime.getAllowedContextWorkflow()}`);
 
   console.log('\n📋 Registered:');
-  console.log('  Capabilities:', runtime.listCapabilities());
+  console.log('  Plugins:', runtime.listPlugins());
   console.log('  Workflows:', runtime.listWorkflows());
 
-  // ✅ Test: Workflow yang benar
-  console.log('\n📋 Test 1: dummy/wf-greet');
-  const result1 = await runtime.execute('dummy/wf-greet', { name: 'Budi' });
-  console.log('✅ Result:', result1);
+  // ===== SKENARIO 1: Set global context =====
+  console.log('\n═══════════════════════════════════════');
+  console.log('📋 SKENARIO 1: Set global context');
+  console.log('═══════════════════════════════════════\n');
 
-  // ❌ Test: Workflow tidak ditemukan
-  console.log('\n📋 Test 2: dummy/wf-notfound');
+  await runtime.execute('workspace/wf-set-context', {
+    role: 'TREASURER',
+    userId: 'user-001',
+    userName: 'Budi Santoso',
+    workspaceId: 'ws-001',
+    workspaceName: 'BEM UI'
+  });
+
+  console.log('\n📦 Global context:', Object.fromEntries(runtime.getGlobalContext()));
+
+  // ===== SKENARIO 2: Workflow dengan guard =====
+  console.log('\n═══════════════════════════════════════');
+  console.log('📋 SKENARIO 2: Workflow dengan guard (role = TREASURER)');
+  console.log('═══════════════════════════════════════\n');
+
+  console.log('✅ Menjalankan dummy/wf-secure (role = TREASURER) → seharusnya BERHASIL');
+  await runtime.execute('dummy/wf-secure', { name: 'Budi' });
+
+  // ===== SKENARIO 3: Workflow dengan guard gagal =====
+  console.log('\n═══════════════════════════════════════');
+  console.log('📋 SKENARIO 3: Workflow dengan guard gagal');
+  console.log('═══════════════════════════════════════\n');
+
+  // Ubah role bukan TREASURER
+  await runtime.execute('workspace/wf-set-context', {
+    role: 'MEMBER',
+    userId: 'user-001',
+    userName: 'Budi Santoso'
+  });
+
+  console.log('\n📦 Global context:', Object.fromEntries(runtime.getGlobalContext()));
+
+  console.log('❌ Menjalankan dummy/wf-secure (role = MEMBER) → seharusnya GAGAL');
   try {
-    await runtime.execute('dummy/wf-notfound', {});
+    await runtime.execute('dummy/wf-secure', { name: 'Budi' });
   } catch (error) {
     console.log('✅ Error caught:', error.message);
   }
 
-  // ❌ Test: Capability tidak ditemukan
-  console.log('\n📋 Test 3: dummy/cap-notfound');
-  try {
-    await runtime.executeCapability('dummy/cap-notfound', {});
-  } catch (error) {
-    console.log('✅ Error caught:', error.message);
-  }
+  // ===== SKENARIO 4: Workflow dengan multiple guard =====
+  console.log('\n═══════════════════════════════════════');
+  console.log('📋 SKENARIO 4: Workflow dengan multiple guard');
+  console.log('═══════════════════════════════════════\n');
 
-  // ❌ Test: Step dengan capability salah
-  console.log('\n📋 Test 4: dummy/wf-error-step');
-  try {
-    await runtime.execute('dummy/wf-error-step', {});
-  } catch (error) {
-    console.log('✅ Error caught:', error.message);
-  }
+  // Set role TREASURER dan input status WAITING_APPROVAL
+  await runtime.execute('workspace/wf-set-context', {
+    role: 'TREASURER',
+    userId: 'user-001',
+    userName: 'Budi Santoso'
+  });
+
+  console.log('✅ Menjalankan dummy/wf-secure-status (role=TREASURER, status=WAITING_APPROVAL)');
+  await runtime.execute('dummy/wf-secure-status', { 
+    name: 'Budi', 
+    status: 'WAITING_APPROVAL' 
+  });
+
+  console.log('\n✅ Semua skenario selesai!');
 }
 
 main().catch(console.error);
