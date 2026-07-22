@@ -1,6 +1,6 @@
 // test-idempotency.ts
-import { PolarisRuntime } from './core/runtime';
-import { DummyPlugin } from './plugins/dummy.plugin';
+import { PolarisRuntime } from '../core/runtime';
+import { DummyPlugin } from '../plugins/dummy.plugin';
 
 async function main() {
   const runtime = new PolarisRuntime();

@@ -50,3 +50,24 @@ export interface IContext {
 // ===== CONTEXT HELPERS =====
 export type ContextValue = any;
 export type ContextKey = string;
+
+// ===== EVENT =====
+export interface IWorkflowEvent {
+  type: 'workflow_started' | 'step_started' | 'step_completed' | 
+        'workflow_completed' | 'workflow_failed';
+  workflowPath: string;
+  stepName?: string;
+  input?: any;
+  output?: any;
+  error?: string;
+  timestamp: number;
+}
+
+export interface IWorkflowState {
+  id: string;
+  workflowPath: string;
+  status: 'running' | 'completed' | 'failed';
+  events: IWorkflowEvent[];
+  startedAt: number;
+  completedAt?: number;
+}

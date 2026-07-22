@@ -1,4 +1,4 @@
-import { IPlugin, ICapability, IWorkflow, IContext, IAllowedGuard } from './types';
+import { IPlugin, ICapability, IWorkflow, IContext, IAllowedGuard, IWorkflowState, IWorkflowEvent } from './types';
 
 export class PolarisRuntime {
   private capabilities: Map<string, ICapability> = new Map();
@@ -122,6 +122,25 @@ export class PolarisRuntime {
     }
   }
 
+  // ===== EVENT STATE =====
+  private currentState: IWorkflowState | null = null;
+
+  private emitEvent(event: IWorkflowEvent): void {
+    if (this.currentState) {
+      this.currentState.events.push(event);
+    }
+  }
+
+  // ===== GET LAST STATE =====
+  getLastState(): IWorkflowState | null {
+    return this.currentState;
+  }
+
+  // ===== CLEAR STATE =====
+  clearState(): void {
+    this.currentState = null;
+  }
+
   // ===== EXECUTE =====
   async execute(workflowPath: string, input: any): Promise<any> {
   const workflow = this.workflows.get(workflowPath);
@@ -168,6 +187,23 @@ export class PolarisRuntime {
 
   let result = input;
 
+  // 1. Set state
+  this.currentState = {
+    id: `state_${Date.now()}`,
+    workflowPath,
+    status: 'running',
+    events: [],
+    startedAt: Date.now()
+  };
+
+  // 2. Emit workflow_started
+  this.emitEvent({
+    type: 'workflow_started',
+    workflowPath,
+    input,
+    timestamp: Date.now()
+  });
+
   for (const step of workflow.steps) {
     try {
       console.log(`  ▶️  Step: ${step.name}`);
@@ -202,6 +238,14 @@ export class PolarisRuntime {
 
       let stepResult: any;
 
+      // 3. Di setiap step:
+      this.emitEvent({
+        type: 'step_started',
+        workflowPath,
+        stepName: step.name,
+        timestamp: Date.now()
+      });
+
       if (timeoutMs === 0) {
         // Tanpa timeout
         stepResult = await cap.run(stepInput, context);
@@ -220,6 +264,15 @@ export class PolarisRuntime {
       result = stepResult;
       context.steps.set(step.name, result);
 
+      // Setelah step selesai:
+      this.emitEvent({
+        type: 'step_completed',
+        workflowPath,
+        stepName: step.name,
+        output: result,
+        timestamp: Date.now()
+      });
+
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`❌ Step "${step.name}" failed:`, message);
@@ -230,8 +283,28 @@ export class PolarisRuntime {
         console.log(`   💡 Tip: Increase timeout or check capability performance`);
       }
 
+      // 5. Di error:
+      this.currentState.status = 'failed';
+      this.currentState.completedAt = Date.now();
+      this.emitEvent({
+        type: 'workflow_failed',
+        workflowPath,
+        error: error.message,
+        timestamp: Date.now()
+      });
+
       throw error;
     }
+
+    // 4. Di akhir (success):
+    this.currentState.status = 'completed';
+    this.currentState.completedAt = Date.now();
+    this.emitEvent({
+      type: 'workflow_completed',
+      workflowPath,
+      output: result,
+      timestamp: Date.now()
+    });
   }
 
   // ===== ALLOWED WORKFLOW =====
