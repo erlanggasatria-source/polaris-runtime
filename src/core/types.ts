@@ -57,6 +57,9 @@ export interface IWorkflowEvent {
         'workflow_completed' | 'workflow_failed';
   workflowPath: string;
   stepName?: string;
+  stepIndex?: number;      // ← TAMBAHAN
+  totalSteps?: number;     // ← TAMBAHAN
+  progress?: number;       // ← TAMBAHAN (persentase)
   input?: any;
   output?: any;
   error?: string;
@@ -64,7 +67,7 @@ export interface IWorkflowEvent {
 }
 
 export interface IWorkflowState {
-  id: string;
+  id: string; // executionId
   workflowPath: string;
   status: 'running' | 'completed' | 'failed';
   events: IWorkflowEvent[];

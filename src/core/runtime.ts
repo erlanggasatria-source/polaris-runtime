@@ -122,23 +122,62 @@ export class PolarisRuntime {
     }
   }
 
-  // ===== EVENT STATE =====
-  private currentState: IWorkflowState | null = null;
+  // ===== MULTI-WORKFLOW STATE =====
+  private states: Map<string, IWorkflowState> = new Map();
+  private stateCleanupTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+  private readonly STATE_TTL = 30000; // 30 detik
 
-  private emitEvent(event: IWorkflowEvent): void {
-    if (this.currentState) {
-      this.currentState.events.push(event);
+  // ===== GENERATE EXECUTION ID =====
+  private generateExecutionId(workflowPath: string): string {
+    const random = Math.random().toString(36).substring(2, 8);
+    return `${workflowPath}:${Date.now()}:${random}`;
+  }
+  // ===== EMIT EVENT =====
+  private emitEvent(executionId: string, event: IWorkflowEvent): void {
+    const state = this.states.get(executionId);
+    if (state) {
+      state.events.push(event);
     }
   }
 
-  // ===== GET LAST STATE =====
-  getLastState(): IWorkflowState | null {
-    return this.currentState;
+  getAllStates(): IWorkflowState[] {
+    return Array.from(this.states.values());
   }
 
-  // ===== CLEAR STATE =====
-  clearState(): void {
-    this.currentState = null;
+  getLastState(): IWorkflowState | null {
+    // Return state yang paling baru (completed atau running)
+    const states = Array.from(this.states.values());
+    if (states.length === 0) return null;
+    return states.reduce((a, b) => a.startedAt > b.startedAt ? a : b);
+  }
+
+  // ===== CLEAR ALL STATES =====
+  clearAllStates(): void {
+    // Hapus semua timer
+    for (const [id, timer] of this.stateCleanupTimers) {
+      clearTimeout(timer);
+    }
+    this.stateCleanupTimers.clear();
+    this.states.clear();
+    console.log('🧹 All states cleared');
+  }
+
+  // ===== SCHEDULE CLEANUP =====
+  private scheduleStateCleanup(executionId: string): void {
+    // Hapus timer sebelumnya jika ada
+    const existingTimer = this.stateCleanupTimers.get(executionId);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      this.stateCleanupTimers.delete(executionId);
+    }
+
+    const timer = setTimeout(() => {
+      this.states.delete(executionId);
+      this.stateCleanupTimers.delete(executionId);
+      console.log(`🧹 State cleaned up: ${executionId}`);
+    }, this.STATE_TTL);
+
+    this.stateCleanupTimers.set(executionId, timer);
   }
 
   // ===== EXECUTE =====
@@ -186,18 +225,23 @@ export class PolarisRuntime {
   console.log(`   📦 Global context:`, Object.fromEntries(this.globalContext));
 
   let result = input;
-
+  // ===== PROGRESS =====
+  const executionId = this.generateExecutionId(workflowPath);
+  const totalSteps = workflow.steps.length;
+  
   // 1. Set state
-  this.currentState = {
-    id: `state_${Date.now()}`,
+  const state: IWorkflowState = {
+    id: executionId,
     workflowPath,
     status: 'running',
     events: [],
     startedAt: Date.now()
   };
 
+  this.states.set(executionId, state);
+
   // 2. Emit workflow_started
-  this.emitEvent({
+  this.emitEvent(executionId, {
     type: 'workflow_started',
     workflowPath,
     input,
@@ -238,13 +282,19 @@ export class PolarisRuntime {
 
       let stepResult: any;
 
+      // progress
+      const stepIndex = workflow.steps.indexOf(step);
+      const progress = Math.round(((stepIndex + 1) / totalSteps) * 100);
       // 3. Di setiap step:
-      this.emitEvent({
-        type: 'step_started',
-        workflowPath,
-        stepName: step.name,
-        timestamp: Date.now()
-      });
+      this.emitEvent(executionId, {
+      type: 'step_started',
+      workflowPath,
+      stepName: step.name,
+      stepIndex: stepIndex + 1,  // 1-based untuk user
+      totalSteps,
+      progress,
+      timestamp: Date.now()
+    });
 
       if (timeoutMs === 0) {
         // Tanpa timeout
@@ -265,7 +315,7 @@ export class PolarisRuntime {
       context.steps.set(step.name, result);
 
       // Setelah step selesai:
-      this.emitEvent({
+      this.emitEvent(executionId, {
         type: 'step_completed',
         workflowPath,
         stepName: step.name,
@@ -284,27 +334,33 @@ export class PolarisRuntime {
       }
 
       // 5. Di error:
-      this.currentState.status = 'failed';
-      this.currentState.completedAt = Date.now();
-      this.emitEvent({
+      state.status = 'completed';
+      state.completedAt = Date.now();
+      this.emitEvent(executionId, {
         type: 'workflow_failed',
         workflowPath,
-        error: error.message,
+        error: message,
         timestamp: Date.now()
       });
 
+      // Setelah workflow selesai (success atau failed), mulai timer cleanup
+      this.scheduleStateCleanup(executionId);
       throw error;
     }
 
     // 4. Di akhir (success):
-    this.currentState.status = 'completed';
-    this.currentState.completedAt = Date.now();
-    this.emitEvent({
+    state.status = 'completed';
+    state.completedAt = Date.now();
+    this.emitEvent(executionId, {
       type: 'workflow_completed',
       workflowPath,
       output: result,
       timestamp: Date.now()
     });
+    
+    console.debug( this.getAllStates()[0].events);
+    // Setelah workflow selesai (success atau failed), mulai timer cleanup
+    this.scheduleStateCleanup(executionId);
   }
 
   // ===== ALLOWED WORKFLOW =====
