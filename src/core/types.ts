@@ -27,6 +27,7 @@ export interface IStep {
   name: string;
   useCapability: string;
   dependsOn?: string[];
+  timeout?: number; // dalam milidetik, 0 = tanpa timeout
 }
 
 // ===== GUARD =====

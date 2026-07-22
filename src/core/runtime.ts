@@ -28,6 +28,29 @@ export class PolarisRuntime {
     console.log('✅ Global context updated:', Object.fromEntries(this.globalContext));
   }
 
+  // ===== IDEMPOTENCY =====
+
+  private idempotencyStore: Map<string, number> = new Map();
+  private readonly IDEMPOTENCY_TTL = 30000; // 30 detik
+
+  // ===== GENERATE KEY =====
+  private generateIdempotencyKey(workflowPath: string, input: any): string {
+    const inputString = JSON.stringify(input);
+    return `${workflowPath}:${inputString}`;
+  }
+
+  // ===== CHECK & CLEANUP =====
+  private checkIdempotency(key: string): boolean {
+    // Hapus key yang sudah expired
+    const now = Date.now();
+    for (const [k, timestamp] of this.idempotencyStore) {
+      if (now - timestamp > this.IDEMPOTENCY_TTL) {
+        this.idempotencyStore.delete(k);
+      }
+    }
+    return this.idempotencyStore.has(key);
+  }
+
   // ===== REGISTER =====
   register(plugins: IPlugin[]): void {
     for (const plugin of plugins) {
@@ -101,100 +124,128 @@ export class PolarisRuntime {
 
   // ===== EXECUTE =====
   async execute(workflowPath: string, input: any): Promise<any> {
-    const workflow = this.workflows.get(workflowPath);
-    if (!workflow) {
-      console.error(`❌ Workflow not found: "${workflowPath}"`);
-      console.log(`   📋 Available workflows: ${this.listWorkflows().join(', ')}`);
-      throw new Error(`Workflow "${workflowPath}" not found`);
-    }
+  const workflow = this.workflows.get(workflowPath);
+  if (!workflow) {
+    console.error(`❌ Workflow not found: "${workflowPath}"`);
+    console.log(`   📋 Available workflows: ${this.listWorkflows().join(', ')}`);
+    throw new Error(`Workflow "${workflowPath}" not found`);
+  }
 
-    // ===== CHECK GUARD =====
-    if (workflow.allowed && workflow.allowed.length > 0) {
-      console.log(`\n🛡️ Checking guards for: ${workflowPath}`);
-      let allPassed = true;
-      for (const guard of workflow.allowed) {
-        const passed = this.checkGuard(guard, input);
-        console.log(`   ${guard.source}.${guard.key} ${guard.operator || 'eq'} ${guard.value} → ${passed ? '✅' : '❌'}`);
-        if (!passed) {
-          allPassed = false;
-          break;
-        }
-      }
+  // ==== IDEMPOTENCY GUARD ====
+  const idKey = this.generateIdempotencyKey(workflowPath, input);
+  if (this.checkIdempotency(idKey)) {
+    const error = new Error(`Duplicate workflow execution detected: ${workflowPath}`);
+    console.error(`❌ ${error.message}`);
+    throw error;
+  }
+  this.idempotencyStore.set(idKey, Date.now());
 
-      if (!allPassed) {
+  // ===== GUARD =====
+  if (workflow.allowed && workflow.allowed.length > 0) {
+    console.log(`\n🛡️ Checking guards for: ${workflowPath}`);
+    for (const guard of workflow.allowed) {
+      const passed = this.checkGuard(guard, input);
+      console.log(`   ${guard.source}.${guard.key} ${guard.operator || 'eq'} ${guard.value} → ${passed ? '✅' : '❌'}`);
+      if (!passed) {
         console.error(`❌ Workflow "${workflowPath}" not allowed to execute`);
         throw new Error(`Workflow "${workflowPath}" not allowed to execute`);
       }
     }
-
-    // ===== BUILD CONTEXT =====
-    const context: IContext = {
-      id: `ctx_${Date.now()}`,
-      variables: new Map(),
-      steps: new Map(),
-      input,
-      context: new Map(this.globalContext) // ← COPY global context!
-    };
-
-    console.log(`\n🚀 Executing: ${workflowPath}`);
-    console.log(`   📝 ${workflow.description || 'No description'}`);
-    console.log(`   📦 Global context:`, Object.fromEntries(this.globalContext));
-
-    let result = input;
-
-    for (const step of workflow.steps) {
-      try {
-        console.log(`  ▶️  Step: ${step.name}`);
-
-        let stepInput: any;
-        if (step.dependsOn && step.dependsOn.length > 0) {
-          stepInput = {};
-          for (const dep of step.dependsOn) {
-            const depResult = context.steps.get(dep);
-            if (depResult) {
-              stepInput = { ...stepInput, ...depResult };
-            }
-          }
-        } else {
-          stepInput = result;
-        }
-
-        const cap = this.capabilities.get(step.useCapability);
-        if (!cap) {
-          console.error(`❌ Capability not found: "${step.useCapability}"`);
-          console.log(`   📋 Available capabilities: ${this.listCapabilities().join(', ')}`);
-          throw new Error(`Capability "${step.useCapability}" not found`);
-        }
-
-        console.log(`     ⚡ ${step.useCapability}`);
-        console.log(`     📝 ${cap.description || 'No description'}`);
-
-        result = await cap.run(stepInput, context);
-        context.steps.set(step.name, result);
-        console.log(context);
-
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.error(`❌ Step "${step.name}" failed:`, message);
-        console.log(`   📍 Workflow: ${workflowPath}`);
-        console.log(`   📍 Input:`, JSON.stringify(input, null, 2));
-        throw error;
-      }
-    }
-
-    // ===== ALLOWED WORKFLOW: UPDATE GLOBAL CONTEXT =====
-    if (workflowPath === this.allowedContextWorkflow) {
-      const lastStepName = workflow.steps[workflow.steps.length - 1]?.name;
-      const contextResult = lastStepName ? context.steps.get(lastStepName) : result;
-
-      if (contextResult && typeof contextResult === 'object') {
-        this.updateGlobalContext(contextResult);
-      }
-    }
-
-    console.log(`✅ Workflow completed: ${workflowPath}`);
-    return result;
   }
+
+  // ===== CONTEXT =====
+  const context: IContext = {
+    id: `ctx_${Date.now()}`,
+    variables: new Map(),
+    steps: new Map(),
+    input,
+    context: new Map(this.globalContext)
+  };
+
+  console.log(`\n🚀 Executing: ${workflowPath}`);
+  console.log(`   📝 ${workflow.description || 'No description'}`);
+  console.log(`   📦 Global context:`, Object.fromEntries(this.globalContext));
+
+  let result = input;
+
+  for (const step of workflow.steps) {
+    try {
+      console.log(`  ▶️  Step: ${step.name}`);
+
+      // ===== PREPARE INPUT =====
+      let stepInput: any;
+      if (step.dependsOn && step.dependsOn.length > 0) {
+        stepInput = {};
+        for (const dep of step.dependsOn) {
+          const depResult = context.steps.get(dep);
+          if (depResult) {
+            stepInput = { ...stepInput, ...depResult };
+          }
+        }
+      } else {
+        stepInput = result;
+      }
+
+      // ===== GET CAPABILITY =====
+      const cap = this.capabilities.get(step.useCapability);
+      if (!cap) {
+        console.error(`❌ Capability not found: "${step.useCapability}"`);
+        console.log(`   📋 Available capabilities: ${this.listCapabilities().join(', ')}`);
+        throw new Error(`Capability "${step.useCapability}" not found`);
+      }
+
+      console.log(`     ⚡ ${step.useCapability}`);
+      console.log(`     📝 ${cap.description || 'No description'}`);
+
+      // ===== TIMEOUT =====
+      const timeoutMs = step.timeout ?? 30000; // default 30 detik
+
+      let stepResult: any;
+
+      if (timeoutMs === 0) {
+        // Tanpa timeout
+        stepResult = await cap.run(stepInput, context);
+      } else {
+        // Dengan timeout
+        stepResult = await Promise.race([
+          cap.run(stepInput, context),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => {
+              reject(new Error(`⏰ Step "${step.name}" timeout after ${timeoutMs}ms`));
+            }, timeoutMs)
+          )
+        ]);
+      }
+
+      result = stepResult;
+      context.steps.set(step.name, result);
+
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`❌ Step "${step.name}" failed:`, message);
+      console.log(`   📍 Workflow: ${workflowPath}`);
+      console.log(`   📍 Input:`, JSON.stringify(input, null, 2));
+
+      if (message.includes('timeout')) {
+        console.log(`   💡 Tip: Increase timeout or check capability performance`);
+      }
+
+      throw error;
+    }
+  }
+
+  // ===== ALLOWED WORKFLOW =====
+  if (workflowPath === this.allowedContextWorkflow) {
+    const lastStepName = workflow.steps[workflow.steps.length - 1]?.name;
+    const contextResult = lastStepName ? context.steps.get(lastStepName) : result;
+    if (contextResult && typeof contextResult === 'object') {
+      this.updateGlobalContext(contextResult);
+    }
+  }
+
+  console.log(`✅ Workflow completed: ${workflowPath}`);
+  return result;
+}
 
   // ===== EXECUTE CAPABILITY =====
   async executeCapability(capPath: string, input: any): Promise<any> {
@@ -248,5 +299,26 @@ export class PolarisRuntime {
 
   getGlobalContext(): Map<string, any> {
     return this.globalContext;
+  }
+
+  // ===== TIMEOUT HELPER =====
+  private async executeWithTimeout<T>(
+    fn: () => Promise<T>,
+    timeoutMs: number,
+    stepName: string
+  ): Promise<T> {
+    if (timeoutMs === 0) {
+      // Tanpa timeout
+      return await fn();
+    }
+
+    return await Promise.race([
+      fn(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => {
+          reject(new Error(`⏰ Step "${stepName}" timeout after ${timeoutMs}ms`));
+        }, timeoutMs)
+      )
+    ]);
   }
 }

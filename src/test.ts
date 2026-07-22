@@ -77,8 +77,14 @@ async function main() {
     name: 'Budi', 
     status: 'WAITING_APPROVAL' 
   });
+  console.log('test slow timeout');
+  try {
+    await runtime.execute('dummy/wf-slow', {});
+  } catch (error) {
+    console.error(error.message);
+  }
 
-  console.log('\n✅ Semua skenario selesai!');
+  console.log('\n✅ Semua skenario selesai!');  
 }
 
 main().catch(console.error);

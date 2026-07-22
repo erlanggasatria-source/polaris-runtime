@@ -113,6 +113,16 @@ export const DummyPlugin: IPlugin = {
         };
       }
     }
+    ,
+    //cap slow timeout
+    {
+      name: 'dummy/cap-slow',
+      description: 'Capability yang sengaja lambat (5 detik)',
+      run: async () => {
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        return { status: 'done' };
+      }
+    }
   ],
 
   workflows: [
@@ -236,6 +246,29 @@ export const DummyPlugin: IPlugin = {
       steps: [
         { name: 'SayHello', useCapability: 'dummy/cap-greet' }
       ]
-    }
+    },
+    // dummy slow
+      {
+    name: 'dummy/wf-slow',
+    description: 'Workflow dengan step lambat (timeout 2 detik)',
+    steps: [
+      { 
+        name: 'SlowStep', 
+        useCapability: 'dummy/cap-slow',
+        timeout: 2000 // 2 detik, akan timeout karena cap-slow butuh 5 detik
+      }
+    ]
+  },
+  {
+    name: 'dummy/wf-fast',
+    description: 'Workflow dengan step lambat (timeout 10 detik)',
+    steps: [
+      { 
+        name: 'SlowStep', 
+        useCapability: 'dummy/cap-slow',
+        timeout: 10000 // 10 detik, akan berhasil
+      }
+    ]
+  }
   ]
 };
