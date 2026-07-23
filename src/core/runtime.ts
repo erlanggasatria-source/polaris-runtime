@@ -362,8 +362,7 @@ export class PolarisRuntime {
       output: result,
       timestamp: Date.now()
     });
-    
-    console.debug( this.getAllStates()[0].events);
+        
     // Setelah workflow selesai (success atau failed), mulai timer cleanup
     this.scheduleStateCleanup(executionId);
   }
@@ -474,4 +473,43 @@ export class PolarisRuntime {
     };
   }
   
+  // ===== CAN EXECUTE =====
+  canExecute(workflowPath: string, input: any = {}): { allowed: boolean; reason?: string } {
+    const workflow = this.workflows.get(workflowPath);
+    if (!workflow) {
+      return { allowed: false, reason: `Workflow "${workflowPath}" not found` };
+    }
+
+    if (!workflow.allowed || workflow.allowed.length === 0) {
+      return { allowed: true };
+    }
+
+    for (const guard of workflow.allowed) {
+      let actualValue: any;
+      if (guard.source === 'context') {
+        actualValue = this.globalContext.get(guard.key);
+      } else {
+        actualValue = input[guard.key];
+      }
+
+      const operator = guard.operator || 'eq';
+      let passed = false;
+      switch (operator) {
+        case 'eq': passed = actualValue === guard.value; break;
+        case 'neq': passed = actualValue !== guard.value; break;
+        case 'in': passed = Array.isArray(guard.value) && guard.value.includes(actualValue); break;
+        case 'nin': passed = Array.isArray(guard.value) && !guard.value.includes(actualValue); break;
+        default: passed = false;
+      }
+
+      if (!passed) {
+        return {
+          allowed: false,
+          reason: `Guard failed: ${guard.source}.${guard.key} ${operator} ${guard.value} (actual: ${actualValue})`
+        };
+      }
+    }
+
+    return { allowed: true };
+  }
 }
