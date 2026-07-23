@@ -74,3 +74,5 @@ export interface IWorkflowState {
   startedAt: number;
   completedAt?: number;
 }
+
+export type EventCallback = (event: IWorkflowEvent) => void;

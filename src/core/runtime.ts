@@ -1,4 +1,4 @@
-import { IPlugin, ICapability, IWorkflow, IContext, IAllowedGuard, IWorkflowState, IWorkflowEvent } from './types';
+import { IPlugin, ICapability, IWorkflow, IContext, IAllowedGuard, IWorkflowState, IWorkflowEvent, EventCallback } from './types';
 
 export class PolarisRuntime {
   private capabilities: Map<string, ICapability> = new Map();
@@ -137,6 +137,11 @@ export class PolarisRuntime {
     const state = this.states.get(executionId);
     if (state) {
       state.events.push(event);
+    }
+    // Kirim ke subscriber yang sesuai
+    const callbacks = this.subscribers.get(event.workflowPath) || [];
+    for (const cb of callbacks) {
+      cb(event);
     }
   }
 
@@ -450,4 +455,23 @@ export class PolarisRuntime {
       )
     ]);
   }
+
+  // ===== RUNTIME: Subscribe by Workflow Path =====
+  private subscribers: Map<string, EventCallback[]> = new Map();
+
+  // Subscribe ke workflow tertentu
+  subscribe(workflowPath: string, callback: EventCallback): () => void {
+    if (!this.subscribers.has(workflowPath)) {
+      this.subscribers.set(workflowPath, []);
+    }
+    this.subscribers.get(workflowPath)!.push(callback);
+    
+    return () => {
+      const callbacks = this.subscribers.get(workflowPath);
+      if (callbacks) {
+        this.subscribers.set(workflowPath, callbacks.filter(cb => cb !== callback));
+      }
+    };
+  }
+  
 }
