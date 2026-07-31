@@ -1,6 +1,6 @@
 // test-idempotency.ts
 import { PolarisRuntime } from '../core/runtime';
-import { DummyPlugin } from '../plugins/dummy.plugin';
+import { DummyPlugin } from '../plugins/dummy-plugin';
 
 async function main() {
   const runtime = new PolarisRuntime();
@@ -21,7 +21,8 @@ async function main() {
   try {
     await runtime.execute('dummy/wf-greet', input);
   } catch (error) {
-    console.log('❌ Error caught:', error.message);
+    const message = error instanceof Error ? error.message : String(error);
+    console.log('❌ Error caught:', message);
   }
 
   // Eksekusi dengan input berbeda → berhasil

@@ -12,6 +12,18 @@
   "description": "Minimal Polaris Runtime",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./dev": {
+      "import": "./dist/dev.js",
+      "require": "./dist/dev.js",
+      "types": "./dist/dev.d.ts"
+    }
+  },
   "dependencies": {
     "undici-types": "^8.3.0"
   },

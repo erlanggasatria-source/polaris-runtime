@@ -1,6 +1,6 @@
 import { PolarisRuntime } from '../core/runtime';
-import { DummyPlugin } from '../plugins/dummy.plugin';
-import { WorkspacePlugin } from '../plugins/workspace.plugin';
+import { DummyPlugin } from '../plugins/dummy-plugin';
+import { WorkspacePlugin } from '../plugins/workspace-plugin';
 
 async function main() {
   const runtime = new PolarisRuntime();
@@ -57,7 +57,8 @@ async function main() {
   try {
     await runtime.execute('dummy/wf-secure', { name: 'Budi' });
   } catch (error) {
-    console.log('✅ Error caught:', error.message);
+    const message = error instanceof Error ? error.message : String(error);
+    console.log('✅ Error caught:', message);
   }
 
   // ===== SKENARIO 4: Workflow dengan multiple guard =====
@@ -81,7 +82,8 @@ async function main() {
   try {
     await runtime.execute('dummy/wf-slow', {});
   } catch (error) {
-    console.error(error.message);
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(message);
   }
 
   console.log('\n✅ Semua skenario selesai!');  

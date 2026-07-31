@@ -1,5 +1,5 @@
 import { PolarisRuntime } from '../core/runtime';
-import { RepoPlugin } from '../plugins/repo.plugin';
+import { RepoPlugin } from '../plugins/repo-plugin';
 
 import { LocalStorage } from 'node-localstorage';
 

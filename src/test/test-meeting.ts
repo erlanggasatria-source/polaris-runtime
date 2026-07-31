@@ -6,9 +6,9 @@ if (typeof localStorage === 'undefined') {
 }
 
 import { PolarisRuntime } from '../core/runtime';
-import { RepoPlugin } from '../plugins/repo.plugin';
-import { MeetingPlugin } from '../plugins/meeting.plugin';
-import { WorkspacePlugin } from '../plugins/workspace.plugin';
+import { RepoPlugin } from '../plugins/repo-plugin';
+import { MeetingPlugin } from '../plugins/meeting-plugin';
+import { WorkspacePlugin } from '../plugins/workspace-plugin';
 
 async function main() {
   const runtime = new PolarisRuntime();

@@ -76,3 +76,65 @@ export interface IWorkflowState {
 }
 
 export type EventCallback = (event: IWorkflowEvent) => void;
+
+// ============================================
+// KONTRAK RESULT STEP
+// ============================================
+
+export interface IResult {
+  status: 'success' | 'error';
+  domain?: string;
+  id?: string;
+  payload?: any;
+  message?: string;
+  error?: string;
+}
+
+// ============================================
+// FACTORY
+// ============================================
+
+export function successResult(
+  payload?: any,
+  domain?: string,
+  id?: string,
+  message?: string
+): IResult {
+  return {
+    status: 'success',
+    domain,
+    id,
+    payload,
+    message: message || 'Operation successful'
+  };
+}
+
+export function errorResult(
+  error: string,
+  domain?: string,
+  id?: string
+): IResult {
+  return {
+    status: 'error',
+    domain,
+    id,
+    error
+  };
+}
+
+// ===== UTILITY =====
+export function isSuccess(result: IResult): boolean {
+  return result.status === 'success';
+}
+
+export function isError(result: IResult): boolean {
+  return result.status === 'error';
+}
+
+export function getPayload<T = any>(result: IResult): T | undefined {
+  return result.payload as T;
+}
+
+export function getError(result: IResult): string | undefined {
+  return result.error;
+}

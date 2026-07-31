@@ -1,5 +1,5 @@
 import { PolarisRuntime } from "../core/runtime.js";
-import { DummyPlugin } from "../plugins/dummy.plugin.js";
+import { DummyPlugin } from "../plugins/dummy-plugin.js";
 
 async function main() {
   const runtime = new PolarisRuntime();

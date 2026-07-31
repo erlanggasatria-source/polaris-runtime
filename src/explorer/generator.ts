@@ -104,7 +104,7 @@ export function generateExplorerHTML(catalog: any): string {
     <h1>⚡ Polaris</h1>
     <div class="sub">Explorer</div>
     <div class="nav-item active" data-target="overview">📋 Overview</div>
-    ${catalog.plugins.map(p => `
+    ${catalog.plugins.map((p: any) => `
       <div class="nav-item" data-target="${p.name}">📦 ${p.name}</div>
     `).join('')}
   </div>
