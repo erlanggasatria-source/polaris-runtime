@@ -1,6 +1,6 @@
-import { PolarisRuntime } from '../core/runtime';
-import { DummyPlugin } from '../plugins/dummy-plugin';
-import { WorkspacePlugin } from '../plugins/workspace-plugin';
+import { PolarisRuntime } from '../src/core/runtime';
+import { DummyPlugin } from '../src/plugins/dummy-plugin';
+import { WorkspacePlugin } from '../src/plugins/workspace-plugin';
 
 async function main() {
   const runtime = new PolarisRuntime();

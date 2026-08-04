@@ -1,5 +1,5 @@
 // ============================================
-// TYPES
+// POLARIS CORE TYPES
 // ============================================
 
 export interface IPlugin {
@@ -19,7 +19,7 @@ export interface ICapability {
 export interface IWorkflow {
   name: string;
   description?: string;
-  allowed?: IAllowedGuard[]; // ← TAMBAHAN!
+  allowed?: IAllowedGuard[];
   steps: IStep[];
 }
 
@@ -27,39 +27,32 @@ export interface IStep {
   name: string;
   useCapability: string;
   dependsOn?: string[];
-  timeout?: number; // dalam milidetik, 0 = tanpa timeout
+  timeout?: number;
 }
 
-// ===== GUARD =====
 export interface IAllowedGuard {
-  key: string;          // 'role' atau 'status'
-  value: any;           // 'TREASURER' atau 'WAITING_APPROVAL'
-  source: 'context' | 'input'; // Dari mana ambil?
-  operator?: 'eq' | 'neq' | 'in' | 'nin'; // Optional
+  key: string;
+  value: any;
+  source: 'context' | 'input';
+  operator?: 'eq' | 'neq' | 'in' | 'nin';
 }
 
-// ===== CONTEXT =====
 export interface IContext {
   id: string;
   variables: Map<string, any>;
   steps: Map<string, any>;
   input: any;
-  context: Map<string, any>; // ← GLOBAL CONTEXT (Map!)
+  context: Map<string, any>;
 }
 
-// ===== CONTEXT HELPERS =====
-export type ContextValue = any;
-export type ContextKey = string;
-
-// ===== EVENT =====
 export interface IWorkflowEvent {
-  type: 'workflow_started' | 'step_started' | 'step_completed' | 
+  type: 'workflow_started' | 'step_started' | 'step_completed' |
         'workflow_completed' | 'workflow_failed';
   workflowPath: string;
   stepName?: string;
-  stepIndex?: number;      // ← TAMBAHAN
-  totalSteps?: number;     // ← TAMBAHAN
-  progress?: number;       // ← TAMBAHAN (persentase)
+  stepIndex?: number;
+  totalSteps?: number;
+  progress?: number;
   input?: any;
   output?: any;
   error?: string;
@@ -67,19 +60,13 @@ export interface IWorkflowEvent {
 }
 
 export interface IWorkflowState {
-  id: string; // executionId
+  id: string;
   workflowPath: string;
   status: 'running' | 'completed' | 'failed';
   events: IWorkflowEvent[];
   startedAt: number;
   completedAt?: number;
 }
-
-export type EventCallback = (event: IWorkflowEvent) => void;
-
-// ============================================
-// KONTRAK RESULT STEP
-// ============================================
 
 export interface IResult {
   status: 'success' | 'error';
@@ -90,10 +77,7 @@ export interface IResult {
   error?: string;
 }
 
-// ============================================
-// FACTORY
-// ============================================
-
+// ===== HELPERS =====
 export function successResult(
   payload?: any,
   domain?: string,
@@ -122,7 +106,6 @@ export function errorResult(
   };
 }
 
-// ===== UTILITY =====
 export function isSuccess(result: IResult): boolean {
   return result.status === 'success';
 }

@@ -1,5 +1,16 @@
-import { IPlugin, ICapability, IWorkflow, IContext, IWorkflowEvent, IWorkflowState, IAllowedGuard } from './types';
+import {
+  IPlugin,
+  ICapability,
+  IWorkflow,
+  IContext,
+  IWorkflowEvent,
+  IWorkflowState,
+  IAllowedGuard,
+  IResult
+} from './types';
 import { logger, LogLevel } from './logger';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export class PolarisRuntime {
   private capabilities: Map<string, ICapability> = new Map();
@@ -12,10 +23,12 @@ export class PolarisRuntime {
   private subscribers: Map<string, ((event: IWorkflowEvent) => void)[]> = new Map();
   private readonly IDEMPOTENCY_TTL = 30000;
   private readonly STATE_TTL = 30000;
+  private isDev: boolean = false;
 
   // ===== CONSTRUCTOR =====
   constructor(options?: { dev?: boolean }) {
-    if (options?.dev) {
+    this.isDev = options?.dev || false;
+    if (this.isDev) {
       logger.setLevel(LogLevel.VERBOSE);
       logger.info('🔧 Polaris Runtime initialized in DEVELOPMENT mode');
     } else {
@@ -24,61 +37,25 @@ export class PolarisRuntime {
     }
   }
 
-  // ===== REGISTER =====
+  // ===== PUBLIC API =====
+
+  // Register plugins
   register(plugins: IPlugin[]): void {
     logger.verbose(`Registering ${plugins.length} plugin(s)...`);
     for (const plugin of plugins) {
       this.registerPlugin(plugin);
     }
     logger.info(`✅ ${plugins.length} plugin(s) registered successfully`);
-  }
-
-  private registerPlugin(plugin: IPlugin): void {
-    logger.verbose(`Registering plugin: ${plugin.name} v${plugin.version}`);
-
-    try {
-      const existingPlugin = this.capabilities.has(`${plugin.name}/cap-`) || 
-                             this.workflows.has(`${plugin.name}/wf-`);
-      
-      if (existingPlugin) {
-        logger.warn(`⚠️ Plugin "${plugin.name}" already registered, skipping...`);
-        return;
-      }
-
-      if (plugin.capabilities) {
-        for (const cap of plugin.capabilities) {
-          if (this.capabilities.has(cap.name)) {
-            throw new Error(`Capability "${cap.name}" already registered`);
-          }
-          this.capabilities.set(cap.name, cap);
-          logger.verbose(`  ⚡ ${cap.name}`);
-        }
-      }
-
-      if (plugin.workflows) {
-        for (const wf of plugin.workflows) {
-          if (this.workflows.has(wf.name)) {
-            throw new Error(`Workflow "${wf.name}" already registered`);
-          }
-          this.workflows.set(wf.name, wf);
-          logger.verbose(`  🔄 ${wf.name}`);
-        }
-      }
-
-      logger.info(`✅ Plugin registered: ${plugin.name} v${plugin.version}`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.error(`❌ Failed to register plugin "${plugin.name}":`, message);
-      throw error;
+    if (this.isDev) {
+      this.generateExplorer();
     }
   }
 
-  // ===== EXECUTE =====
+  // Execute workflow
   async execute(workflowPath: string, input: any): Promise<any> {
     logger.verbose(`🚀 Executing workflow: ${workflowPath}`);
     logger.debug(`Input:`, input);
 
-    // Idempotency check
     const idKey = this.generateIdempotencyKey(workflowPath, input);
     if (this.checkIdempotency(idKey)) {
       const error = new Error(`Duplicate workflow execution detected: ${workflowPath}`);
@@ -87,15 +64,12 @@ export class PolarisRuntime {
     }
     this.idempotencyStore.set(idKey, Date.now());
 
-    // Get workflow
     const workflow = this.workflows.get(workflowPath);
     if (!workflow) {
       logger.error(`❌ Workflow not found: "${workflowPath}"`);
-      logger.info(`   📋 Available workflows: ${this.listWorkflows().join(', ')}`);
       throw new Error(`Workflow "${workflowPath}" not found`);
     }
 
-    // Guard check
     if (workflow.allowed && workflow.allowed.length > 0) {
       logger.verbose(`🛡️ Checking guards for: ${workflowPath}`);
       for (const guard of workflow.allowed) {
@@ -109,7 +83,6 @@ export class PolarisRuntime {
       }
     }
 
-    // Build context
     const executionId = this.generateExecutionId(workflowPath);
     const context: IContext = {
       id: `ctx_${Date.now()}`,
@@ -119,7 +92,6 @@ export class PolarisRuntime {
       context: new Map(this.globalContext)
     };
 
-    // Create state
     const state: IWorkflowState = {
       id: executionId,
       workflowPath,
@@ -129,7 +101,6 @@ export class PolarisRuntime {
     };
     this.states.set(executionId, state);
 
-    // Emit workflow_started
     this.emitEvent(executionId, {
       type: 'workflow_started',
       workflowPath,
@@ -151,7 +122,6 @@ export class PolarisRuntime {
       try {
         logger.verbose(`  ▶️  Step ${stepIndex}/${totalSteps}: ${step.name}`);
 
-        // Prepare input
         let stepInput: any;
         if (step.dependsOn && step.dependsOn.length > 0) {
           stepInput = {};
@@ -167,21 +137,18 @@ export class PolarisRuntime {
           stepInput = result;
         }
 
-        // Get capability
         const cap = this.capabilities.get(step.useCapability);
         if (!cap) {
           logger.error(`❌ Capability not found: "${step.useCapability}"`);
-          logger.info(`   📋 Available capabilities: ${this.listCapabilities().join(', ')}`);
           throw new Error(`Capability "${step.useCapability}" not found`);
         }
 
         logger.verbose(`     ⚡ ${step.useCapability}`);
         logger.verbose(`     📝 ${cap.description || 'No description'}`);
 
-        // Execute with timeout
-        let timeoutId: ReturnType<typeof setTimeout> | undefined;
         const timeoutMs = step.timeout ?? 30000;
         let stepResult: any;
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
         this.emitEvent(executionId, {
           type: 'step_started',
@@ -197,17 +164,17 @@ export class PolarisRuntime {
           stepResult = await cap.run(stepInput, context);
         } else {
           try {
-              stepResult = await Promise.race([
-                cap.run(stepInput, context),
-                new Promise<never>((_, reject) => {
-                  timeoutId = setTimeout(() => {
-                    reject(new Error(`⏰ Step "${step.name}" timeout after ${timeoutMs}ms`));
-                  }, timeoutMs);
-                })
-              ]);
-            } finally {
-              if (timeoutId) clearTimeout(timeoutId);
-            }
+            stepResult = await Promise.race([
+              cap.run(stepInput, context),
+              new Promise<never>((_, reject) => {
+                timeoutId = setTimeout(() => {
+                  reject(new Error(`⏰ Step "${step.name}" timeout after ${timeoutMs}ms`));
+                }, timeoutMs);
+              })
+            ]);
+          } finally {
+            if (timeoutId) clearTimeout(timeoutId);
+          }
         }
 
         result = stepResult;
@@ -244,7 +211,6 @@ export class PolarisRuntime {
       }
     }
 
-    // Workflow completed
     state.status = 'completed';
     state.completedAt = Date.now();
 
@@ -255,7 +221,6 @@ export class PolarisRuntime {
       timestamp: Date.now()
     });
 
-    // Allowed workflow: update global context
     if (workflowPath === this.allowedContextWorkflow) {
       const lastStepName = workflow.steps[workflow.steps.length - 1]?.name;
       const contextResult = lastStepName ? context.steps.get(lastStepName) : result;
@@ -270,40 +235,7 @@ export class PolarisRuntime {
     return result;
   }
 
-  // ===== EXECUTE CAPABILITY =====
-  async executeCapability(capPath: string, input: any): Promise<any> {
-    logger.verbose(`⚡ Executing capability: ${capPath}`);
-
-    const cap = this.capabilities.get(capPath);
-    if (!cap) {
-      logger.error(`❌ Capability not found: "${capPath}"`);
-      logger.info(`   📋 Available capabilities: ${this.listCapabilities().join(', ')}`);
-      throw new Error(`Capability "${capPath}" not found`);
-    }
-
-    logger.debug(`📝 ${cap.description || 'No description'}`);
-
-    try {
-      const context: IContext = {
-        id: `cap_${Date.now()}`,
-        variables: new Map(),
-        steps: new Map(),
-        input,
-        context: new Map(this.globalContext)
-      };
-
-      const result = await cap.run(input, context);
-      logger.info(`✅ Capability executed: ${capPath}`);
-      return result;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.error(`❌ Capability "${capPath}" failed:`, message);
-      logger.debug(`   📍 Input:`, JSON.stringify(input, null, 2));
-      throw error;
-    }
-  }
-
-  // ===== CAN EXECUTE =====
+  // Check permission
   canExecute(workflowPath: string, input: any = {}): { allowed: boolean; reason?: string } {
     logger.verbose(`🔍 Checking permission: ${workflowPath}`);
 
@@ -346,7 +278,7 @@ export class PolarisRuntime {
     return { allowed: true };
   }
 
-  // ===== SUBSCRIBE =====
+  // Subscribe
   subscribe(workflowPath: string, callback: (event: IWorkflowEvent) => void): () => void {
     logger.verbose(`📡 Subscribing to: ${workflowPath}`);
 
@@ -374,7 +306,7 @@ export class PolarisRuntime {
     return this.subscribe('*', callback);
   }
 
-  // ===== CONTEXT =====
+  // Context
   setAllowedContextWorkflow(workflowPath: string): void {
     logger.verbose(`🔒 Allowed context workflow: ${workflowPath}`);
     this.allowedContextWorkflow = workflowPath;
@@ -384,61 +316,82 @@ export class PolarisRuntime {
     return this.allowedContextWorkflow;
   }
 
-  updateGlobalContext(updates: Record<string, any>): void {
+  getGlobalContext(): Map<string, any> {
+    return new Map(this.globalContext);
+  }
+
+  // State
+  getState(executionId: string): IWorkflowState | null {
+    return this.states.get(executionId) || null;
+  }
+
+  // ===== PRIVATE / INTERNAL =====
+
+  private registerPlugin(plugin: IPlugin): void {
+    logger.verbose(`Registering plugin: ${plugin.name} v${plugin.version}`);
+
+    try {
+      const existingPlugin = this.capabilities.has(`${plugin.name}/cap-`) ||
+                             this.workflows.has(`${plugin.name}/wf-`);
+
+      if (existingPlugin) {
+        logger.warn(`⚠️ Plugin "${plugin.name}" already registered, skipping...`);
+        return;
+      }
+
+      if (plugin.capabilities) {
+        for (const cap of plugin.capabilities) {
+          if (this.capabilities.has(cap.name)) {
+            throw new Error(`Capability "${cap.name}" already registered`);
+          }
+          this.capabilities.set(cap.name, cap);
+          logger.verbose(`  ⚡ ${cap.name}`);
+        }
+      }
+
+      if (plugin.workflows) {
+        for (const wf of plugin.workflows) {
+          if (this.workflows.has(wf.name)) {
+            throw new Error(`Workflow "${wf.name}" already registered`);
+          }
+          this.workflows.set(wf.name, wf);
+          logger.verbose(`  🔄 ${wf.name}`);
+        }
+      }
+
+      logger.info(`✅ Plugin registered: ${plugin.name} v${plugin.version}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error(`❌ Failed to register plugin "${plugin.name}":`, message);
+      throw error;
+    }
+  }
+
+  private executeCapability(capPath: string, input: any): Promise<any> {
+    logger.verbose(`⚡ Executing capability: ${capPath}`);
+    const cap = this.capabilities.get(capPath);
+    if (!cap) {
+      throw new Error(`Capability "${capPath}" not found`);
+    }
+
+    const context: IContext = {
+      id: `cap_${Date.now()}`,
+      variables: new Map(),
+      steps: new Map(),
+      input,
+      context: new Map(this.globalContext)
+    };
+
+    return cap.run(input, context);
+  }
+
+  private updateGlobalContext(updates: Record<string, any>): void {
     logger.verbose(`📦 Updating global context:`, updates);
     for (const [key, value] of Object.entries(updates)) {
       this.globalContext.set(key, value);
     }
     logger.info(`✅ Global context updated`);
   }
-
-  getGlobalContext(): Map<string, any> {
-    return new Map(this.globalContext);
-  }
-
-  // ===== STATE =====
-  getState(executionId: string): IWorkflowState | null {
-    return this.states.get(executionId) || null;
-  }
-
-  getAllStates(): IWorkflowState[] {
-    return Array.from(this.states.values());
-  }
-
-  getLastState(): IWorkflowState | null {
-    const states = Array.from(this.states.values());
-    if (states.length === 0) return null;
-    return states.reduce((a, b) => a.startedAt > b.startedAt ? a : b);
-  }
-
-  clearAllStates(): void {
-    for (const [id, timer] of this.stateCleanupTimers) {
-      clearTimeout(timer);
-    }
-    this.stateCleanupTimers.clear();
-    this.states.clear();
-    logger.verbose(`🧹 All states cleared`);
-  }
-
-  // ===== LIST =====
-  listCapabilities(): string[] {
-    return Array.from(this.capabilities.keys());
-  }
-
-  listWorkflows(): string[] {
-    return Array.from(this.workflows.keys());
-  }
-
-  listPlugins(): string[] {
-    const pluginNames = new Set<string>();
-    for (const cap of this.capabilities.keys()) {
-      const plugin = cap.split('/')[0];
-      pluginNames.add(plugin);
-    }
-    return Array.from(pluginNames);
-  }
-
-  // ===== INTERNAL =====
 
   private generateIdempotencyKey(workflowPath: string, input: any): string {
     const inputString = JSON.stringify(input);
@@ -508,6 +461,200 @@ export class PolarisRuntime {
       case 'in': return Array.isArray(guard.value) && guard.value.includes(actualValue);
       case 'nin': return Array.isArray(guard.value) && !guard.value.includes(actualValue);
       default: return false;
+    }
+  }
+
+  // ===== EXPLORER GENERATOR (AUTO) =====
+  private generateExplorer(): void {
+    const isNode = typeof process !== 'undefined' && process.versions?.node;
+    const isBrowser = typeof window !== 'undefined' && typeof window.open === 'function';
+
+    // ===== NODE.JS: generate file + auto-open =====
+    if (isNode) {
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const open = require('open');
+        
+        const explorerDir = path.join(process.cwd(), 'explorer');
+        if (!fs.existsSync(explorerDir)) {
+          fs.mkdirSync(explorerDir, { recursive: true });
+        }
+
+        const catalog = this.buildCatalog();
+        const html = this.buildExplorerHTML(catalog);
+        const indexPath = path.join(explorerDir, 'index.html');
+
+        fs.writeFileSync(indexPath, html);
+        fs.writeFileSync(path.join(explorerDir, 'catalog.json'), JSON.stringify(catalog, null, 2));
+
+        logger.verbose(`📚 Explorer generated: ${indexPath}`);
+        open(indexPath);
+        logger.verbose(`🌐 Explorer opened in browser`);
+
+      } catch (error) {
+        logger.warn(`⚠️ Failed to generate explorer (Node.js):`, error);
+      }
+      return;
+    }
+
+    // ===== BROWSER: virtual HTML di tab baru =====
+    if (isBrowser) {
+      this.openExplorerInBrowser();
+      return;
+    }
+
+    logger.verbose('📚 Explorer only available in Node.js or browser environment');
+  }
+
+  private buildCatalog(): any {
+    const capabilities = Array.from(this.capabilities.keys());
+    const workflows = Array.from(this.workflows.keys());
+    const pluginMap = new Map<string, any>();
+
+    for (const cap of capabilities) {
+      const plugin = cap.split('/')[0];
+      if (!pluginMap.has(plugin)) {
+        pluginMap.set(plugin, { name: plugin, capabilities: [], workflows: [] });
+      }
+      pluginMap.get(plugin).capabilities.push({ name: cap });
+    }
+
+    for (const wf of workflows) {
+      const plugin = wf.split('/')[0];
+      if (!pluginMap.has(plugin)) {
+        pluginMap.set(plugin, { name: plugin, capabilities: [], workflows: [] });
+      }
+      const workflow = this.workflows.get(wf);
+      pluginMap.get(plugin).workflows.push({
+        name: wf,
+        description: workflow?.description || '',
+        allowed: workflow?.allowed || [],
+        steps: workflow?.steps || []
+      });
+    }
+
+    return {
+      runtime: {
+        name: 'Polaris Runtime',
+        version: '1.0.0',
+        allowedContextWorkflow: this.allowedContextWorkflow
+      },
+      statistics: {
+        totalPlugins: pluginMap.size,
+        totalWorkflows: workflows.length,
+        totalCapabilities: capabilities.length
+      },
+      plugins: Array.from(pluginMap.values())
+    };
+  }
+
+  private buildExplorerHTML(catalog: any): string {
+    const allowedWorkflow = catalog.runtime.allowedContextWorkflow || 'None';
+    const jsonString = JSON.stringify(catalog, null, 2);
+
+    return `<!DOCTYPE html>
+  <html>
+  <head><meta charset="UTF-8" /><title>Polaris Explorer</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: system-ui; background: #0b0b0b; color: #e0e0e0; display: flex; height: 100vh; }
+    .sidebar { width: 240px; background: #141414; border-right: 1px solid #2a2a2a; padding: 20px; overflow-y: auto; }
+    .sidebar h1 { font-size: 20px; color: #fff; }
+    .sub { color: #666; font-size: 13px; margin-bottom: 20px; }
+    .nav-item { padding: 8px 12px; border-radius: 6px; cursor: pointer; color: #aaa; }
+    .nav-item:hover { background: #1e1e1e; color: #fff; }
+    .nav-item.active { background: #1e1e1e; color: #6c63ff; }
+    .main { flex: 1; padding: 24px; overflow-y: auto; }
+    .stats { display: flex; gap: 16px; margin-bottom: 24px; }
+    .stat-card { background: #141414; padding: 16px 24px; border-radius: 12px; border: 1px solid #2a2a2a; flex: 1; }
+    .stat-card .num { font-size: 28px; font-weight: 700; color: #fff; }
+    .stat-card .label { color: #888; font-size: 13px; }
+    .card { background: #141414; border: 1px solid #2a2a2a; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    .card-title { font-weight: 600; color: #fff; }
+    .card-desc { color: #999; font-size: 14px; }
+    .badge-allowed { background: #1a2a1a; color: #6caf7a; padding: 2px 10px; border-radius: 12px; font-size: 12px; }
+    .step { padding: 4px 0; font-size: 14px; color: #ccc; border-bottom: 1px solid #1e1e1e; }
+    .step .cap { color: #6c63ff; }
+    .guard { background: #1a1a2a; padding: 4px 10px; border-radius: 4px; font-size: 13px; display: inline-block; margin: 2px 4px 2px 0; border: 1px solid #2a2a3a; }
+  </style>
+  </head>
+  <body>
+  <div class="sidebar">
+    <h1>⚡ Polaris</h1>
+    <div class="sub">Explorer</div>
+    <div class="nav-item active" data-target="overview">📋 Overview</div>
+    ${catalog.plugins.map((p: any) => `
+      <div class="nav-item" data-target="${p.name}">📦 ${p.name}</div>
+    `).join('')}
+  </div>
+  <div class="main" id="content"></div>
+  <script>
+  const data = ${jsonString};
+  const content = document.getElementById('content');
+  function renderOverview() {
+    content.innerHTML = \`
+      <h2>📊 Overview</h2>
+      <div class="stats">
+        <div class="stat-card"><div class="num">\${data.statistics.totalPlugins}</div><div class="label">Plugins</div></div>
+        <div class="stat-card"><div class="num">\${data.statistics.totalWorkflows}</div><div class="label">Workflows</div></div>
+        <div class="stat-card"><div class="num">\${data.statistics.totalCapabilities}</div><div class="label">Capabilities</div></div>
+      </div>
+      <div class="card"><span class="card-title">🔒 Allowed Context Workflow</span> <span class="badge-allowed">${allowedWorkflow}</span></div>
+      <div class="card"><pre>${jsonString}</pre></div>
+    \`;
+  }
+  function renderPlugin(name) {
+    const plugin = data.plugins.find(p => p.name === name);
+    if (!plugin) return renderOverview();
+    let html = \`<h2>📦 \${plugin.name}</h2>\`;
+    if (plugin.capabilities?.length) {
+      html += \`<h3>⚡ Capabilities</h3>\`;
+      plugin.capabilities.forEach(c => { html += \`<div class="card"><div class="card-title">\${c.name}</div></div>\`; });
+    }
+    if (plugin.workflows?.length) {
+      html += \`<h3>🔄 Workflows</h3>\`;
+      plugin.workflows.forEach(w => {
+        const isAllowed = data.runtime.allowedContextWorkflow === w.name;
+        html += \`<div class="card"><div class="card-title">\${w.name} \${isAllowed ? '<span class="badge-allowed">🔒 Allowed Context</span>' : ''}</div><div class="card-desc">\${w.description}</div>\`;
+        if (w.allowed?.length) {
+          html += \`<div>\${w.allowed.map(g => \`<span class="guard">\${g.source}.\${g.key} \${g.operator||'eq'} \${g.value}</span>\`).join('')}</div>\`;
+        }
+        html += \`<div>\${w.steps.map(s => \`<div class="step">▸ \${s.name} → <span class="cap">\${s.useCapability}</span></div>\`).join('')}</div></div>\`;
+      });
+    }
+    content.innerHTML = html;
+  }
+  document.querySelectorAll('.nav-item').forEach(el => {
+    el.addEventListener('click', () => {
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      el.classList.add('active');
+      const target = el.dataset.target;
+      if (target === 'overview') renderOverview();
+      else renderPlugin(target);
+    });
+  });
+  renderOverview();
+  </script>
+  </body>
+  </html>`;
+  }
+
+  private openExplorerInBrowser(): void {
+    try {
+      const catalog = this.buildCatalog();
+      const html = this.buildExplorerHTML(catalog);
+      
+      // Blob HTML
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      
+      // open tab
+      window.open(url, '_blank');
+      
+      logger.verbose(`🌐 Explorer opened in new tab (virtual HTML)`);
+    } catch (error) {
+      logger.warn(`⚠️ Failed to open explorer in browser:`, error);
     }
   }
 }
