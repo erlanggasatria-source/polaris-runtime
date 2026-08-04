@@ -316,10 +316,6 @@ export class PolarisRuntime {
     return this.allowedContextWorkflow;
   }
 
-  getGlobalContext(): Map<string, any> {
-    return new Map(this.globalContext);
-  }
-
   // State
   getState(executionId: string): IWorkflowState | null {
     return this.states.get(executionId) || null;
@@ -617,9 +613,15 @@ export class PolarisRuntime {
       plugin.workflows.forEach(w => {
         const isAllowed = data.runtime.allowedContextWorkflow === w.name;
         html += \`<div class="card"><div class="card-title">\${w.name} \${isAllowed ? '<span class="badge-allowed">🔒 Allowed Context</span>' : ''}</div><div class="card-desc">\${w.description}</div>\`;
+        
+        // Allowed
         if (w.allowed?.length) {
           html += \`<div>\${w.allowed.map(g => \`<span class="guard">\${g.source}.\${g.key} \${g.operator||'eq'} \${g.value}</span>\`).join('')}</div>\`;
+        } else {
+          html += \`<div><span class="guard" style="color:#888;">No restrictions</span></div>\`;
         }
+        
+        // Steps
         html += \`<div>\${w.steps.map(s => \`<div class="step">▸ \${s.name} → <span class="cap">\${s.useCapability}</span></div>\`).join('')}</div></div>\`;
       });
     }
