@@ -12,10 +12,32 @@ Its only responsibility is to execute business workflows declared by plugins.
 
 - [Architecture](./ARCHITECTURE.md) — Design principles and core concepts
 - [API Reference](./API.md) — Public API documentation
+- [Changelog](./CHANGELOG.md) — Version history
+- [Contributing](./CONTRIBUTING.md) — How to contribute
 
 ---
 
 ## 📦 Installation
+
+### From GitHub (current)
+
+```bash
+git clone https://github.com/erlanggasatria-source/polaris-runtime.git
+cd polaris-runtime
+npm install
+npm run build
+```
+
+Then in your project:
+```json
+{
+  "dependencies": {
+    "@polaris/runtime": "file:../polaris-runtime"
+  }
+}
+```
+
+### From npm (coming soon)
 
 ```bash
 npm install @polaris/runtime
@@ -59,6 +81,212 @@ import { PolarisRuntime } from '@polaris/runtime';
 | Allowed       | Defines who can execute a workflow    |
 ---
 
+## 🧩 Example Plugin with Timeout & Allowed Rule
+
+Here's a complete example of a plugin that demonstrates both **timeout** and **allowed** rules.
+
+```typescript
+// plugins/report.plugin.ts
+import { IPlugin } from '@polaris/runtime';
+
+export const ReportPlugin: IPlugin = {
+  name: 'report',
+  version: '1.0.0',
+  description: 'Report generation with timeout and permission guard',
+
+  capabilities: [
+    {
+      name: 'report/cap-generate',
+      description: 'Generate a heavy report (may take time)',
+      run: async (input) => {
+        // Simulate heavy processing
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        return {
+          id: `rpt-${Date.now()}`,
+          title: input.title,
+          pages: 42,
+          status: 'generated'
+        };
+      }
+    },
+    {
+      name: 'report/cap-validate',
+      description: 'Validate report input',
+      run: (input) => {
+        if (!input.title || input.title.trim() === '') {
+          throw new Error('Report title is required');
+        }
+        return { valid: true, data: input };
+      }
+    }
+  ],
+
+  workflows: [
+    {
+      name: 'report/wf-generate',
+      description: 'Generate a report with timeout protection',
+      
+      // ===== ALLOWED RULE: Only 'admin' can generate reports =====
+      allowed: [
+        { 
+          key: 'role', 
+          value: 'admin', 
+          source: 'context',
+          operator: 'eq'
+        }
+      ],
+      
+      steps: [
+        { 
+          name: 'Validate', 
+          useCapability: 'report/cap-validate' 
+        },
+        { 
+          name: 'GenerateReport', 
+          useCapability: 'report/cap-generate',
+          dependsOn: ['Validate'],
+          
+          // ===== TIMEOUT: 10 seconds (overrides default 30s) =====
+          timeout: 10000
+        }
+      ]
+    }
+  ]
+};
+```
+
+### ⏱️ Timeout Management
+
+Each step can have a timeout to prevent workflows from hanging indefinitely.
+Default Timeout
+
+If not specified, each step has a default timeout of 30,000ms (30 seconds).
+```typescript
+
+// Uses default timeout: 30 seconds
+{ 
+  name: 'FetchData', 
+  useCapability: 'data/cap-fetch' 
+}
+```
+
+### Custom Timeout
+
+Override the default by setting timeout in milliseconds:
+```typescript
+
+// 10 seconds timeout
+{ 
+  name: 'GenerateReport', 
+  useCapability: 'report/cap-generate',
+  timeout: 10000 
+}
+
+// 60 seconds timeout (for external API calls)
+{ 
+  name: 'CallExternalAPI', 
+  useCapability: 'integration/cap-api',
+  timeout: 60000 
+}
+
+// No timeout (0 = infinite)
+{ 
+  name: 'HeavyProcessing', 
+  useCapability: 'data/cap-process',
+  timeout: 0 
+}
+```
+
+### Timeout Error
+
+If a step times out, the workflow will fail with an error:
+text
+
+❌ Step "GenerateReport" failed: ⏰ Step "GenerateReport" timeout after 10000ms
+   💡 Tip: Increase timeout or check capability performance
+
+---
+
+## 🛡️ Allowed Rules (Guard)
+
+The allowed property defines who can execute a workflow. It acts as a permission guard.
+Syntax
+```typescript
+
+allowed: [
+  { 
+    key: string,      // Field name to check
+    value: any,       // Expected value
+    source: 'context' | 'input',  // Where to look
+    operator?: 'eq' | 'neq' | 'in' | 'nin'  // Optional, defaults to 'eq'
+  }
+]
+```
+
+Examples
+
+### 1. Single rule - role-based access
+```typescript
+
+allowed: [
+  { 
+    key: 'role', 
+    value: 'admin', 
+    source: 'context',
+    operator: 'eq'
+  }
+]
+```
+
+### 2. Multiple rules - all must pass (AND)
+```typescript
+
+allowed: [
+  { key: 'role', value: 'leader', source: 'context', operator: 'eq' },
+  { key: 'status', value: 'draft', source: 'input', operator: 'eq' }
+]
+```
+
+### 3. Multiple values (IN operator)
+```typescript
+
+allowed: [
+  { 
+    key: 'role', 
+    value: ['admin', 'manager', 'team_lead'], 
+    source: 'context',
+    operator: 'in'
+  }
+]
+```
+
+### 4. Using canExecute() in UI
+```typescript
+
+// Check if current user can execute workflow
+const { allowed, reason } = runtime.canExecute('report/wf-generate', { 
+  status: 'draft' 
+});
+
+if (allowed) {
+  // Show the button
+} else {
+  // Show disabled state with reason
+  console.log(reason); // "Guard failed: context.role eq admin (actual: member)"
+}
+```
+
+### 📊 Summary
+
+| Feature	| Default	                    | Customization                                     |
+|:---       | :---                          | :---                                              |
+| Timeout	| 30,000ms (30s)                | Per step: timeout: number (ms) or 0 for infinite  |
+| Allowed   | None (everyone can execute)	| Per workflow: allowed: IAllowedGuard[]            |
+
+For complete examples, check the polaris-examples repository.
+
+---
+
 ## 📊 Explorer
 
 In development mode, Explorer auto-generates:
@@ -82,13 +310,38 @@ runtime.register([...]); // explorer opens automatically
 
 ## 🧠 Philosophy
 
-    "Speed of coding is no longer a bottleneck, AI is evolving, and understanding is the key"
+> *"@polaris/runtime are self describing runtime which grammar first before the code. The bottleneck speed writing code now has been reduce, understand is."*
 
-Polaris separates business execution from presentation.
+**Polaris is a self-describing runtime** designed to make onboarding easy for both **programmers** and **LLMs**.
 
-UI only triggers workflows and renders projections.
+### How It Works
 
-Business logic belongs to workflows and capabilities.
+1. **Grammar First** — Define business logic using a clear, human-readable grammar (Plugins, Workflows, Capabilities)
+2. **Self-Describing** — Explorer auto-generates documentation from the grammar itself
+3. **Same Language** — Both humans and LLMs understand the same structure
+
+### Separation of Concerns
+
+- **Business Logic** → Lives in workflows and capabilities
+- **Presentation** → UI only triggers workflows and renders projections
+- **Runtime** → Executes workflows and manages state
+
+### AI-Native Development
+
+**"LLM build app code with speed of light, programmer audit and understand a whole structure's with explorer before look any code because LLM and human using same grammar."**
+
+| Role | Responsibility |
+|------|----------------|
+| **LLM** | Generate code at speed of light |
+| **Programmer** | Audit, understand, and guide the structure |
+| **Explorer** | Bridge between LLM and human using the same grammar |
+
+### Why This Matters
+
+- ✅ **No more "what does this code do?"** — Explorer shows you
+- ✅ **LLM and Human speak the same language** — Grammar is the contract
+- ✅ **Onboarding is instant** — Understand the whole system before reading a single line of code
+- ✅ **Speed without chaos** — LLM writes fast, Explorer keeps it understandable
 
 ---
 
