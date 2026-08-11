@@ -225,7 +225,7 @@ export class PolarisRuntime {
       const lastStepName = workflow.steps[workflow.steps.length - 1]?.name;
       const contextResult = lastStepName ? context.steps.get(lastStepName) : result;
       if (contextResult && typeof contextResult === 'object') {
-        this.updateGlobalContext(contextResult);
+        this.updateGlobalContext(contextResult.payload);
       }
     }
 
@@ -316,9 +316,9 @@ export class PolarisRuntime {
     return this.allowedContextWorkflow;
   }
 
-  // State
-  getState(executionId: string): IWorkflowState | null {
-    return this.states.get(executionId) || null;
+  getGlobalContext(): Map<string, any> {
+    console.log('📦 getGlobalContext() called, size:', this.globalContext.size);
+    return new Map(this.globalContext);
   }
 
   // ===== PRIVATE / INTERNAL =====

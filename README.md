@@ -8,6 +8,43 @@ It is **not** an application framework, **not** a UI framework, and **not** a ba
 Its only responsibility is to execute business workflows declared by plugins.
 
 ---
+
+## 🧠 Philosophy
+
+> *"@polaris/runtime are self describing runtime which grammar first before the code. The bottleneck speed writing code now has been reduce, understand is."*
+
+**Polaris is a self-describing runtime** designed to make onboarding easy for both **programmers** and **LLMs**.
+
+### How It Works
+
+1. **Grammar First** — Define business logic using a clear, human-readable grammar (Plugins, Workflows, Capabilities)
+2. **Self-Describing** — Explorer auto-generates documentation from the grammar itself
+3. **Same Language** — Both humans and LLMs understand the same structure
+
+### Separation of Concerns
+
+- **Business Logic** → Lives in workflows and capabilities
+- **Presentation** → UI only triggers workflows and renders projections
+- **Runtime** → Executes workflows and manages state
+
+### AI-Native Development
+
+**"LLM build app code with speed of light, programmer audit and understand a whole structure's with explorer before look any code because LLM and human using same grammar."**
+
+| Role | Responsibility |
+|------|----------------|
+| **LLM** | Generate code at speed of light |
+| **Programmer** | Audit, understand, and guide the structure |
+| **Explorer** | Bridge between LLM and human using the same grammar |
+
+### Why This Matters
+
+- ✅ **No more "what does this code do?"** — Explorer shows you
+- ✅ **LLM and Human speak the same language** — Grammar is the contract
+- ✅ **Onboarding is instant** — Understand the whole system before reading a single line of code
+- ✅ **Speed without chaos** — LLM writes fast, Explorer keeps it understandable
+
+---
 ## 📚 Documentation
 
 - [Architecture](./ARCHITECTURE.md) — Design principles and core concepts
@@ -19,7 +56,13 @@ Its only responsibility is to execute business workflows declared by plugins.
 
 ## 📦 Installation
 
-### From GitHub (current)
+### From npm
+
+```bash
+npm install @polaris-runtime/core
+```
+
+### From GitHub
 
 ```bash
 git clone https://github.com/erlanggasatria-source/polaris-runtime.git
@@ -32,21 +75,16 @@ Then in your project:
 ```json
 {
   "dependencies": {
-    "@polaris/runtime": "file:../polaris-runtime"
+    "@polaris-runtime/core": "file:../polaris-runtime"
   }
 }
 ```
 
-### From npm (coming soon)
-
-```bash
-npm install @polaris/runtime
-```
 ---
 
 ## 🚀 Quick Start
 ```typescript
-import { PolarisRuntime } from '@polaris/runtime';
+import { PolarisRuntime } from '@polaris-runtime/core';
 import { MeetingPlugin } from './plugins/meeting.plugin';
 
 const runtime = new PolarisRuntime();
@@ -63,10 +101,10 @@ const result = await runtime.execute('meeting/wf-list', {});
 ```typescript
 
 // Development — verbose logging + auto-explorer
-import { PolarisRuntime } from '@polaris/runtime/dev';
+import { PolarisRuntime } from '@polaris-runtime/core/dev';
 
 // Production — silent (errors only)
-import { PolarisRuntime } from '@polaris/runtime';
+import { PolarisRuntime } from '@polarisruntime/core';
 ```
 ---
 
@@ -306,43 +344,6 @@ import { PolarisRuntime } from '@polaris/runtime/dev';
 const runtime = new PolarisRuntime(); // auto-explorer enabled
 runtime.register([...]); // explorer opens automatically
 ```
----
-
-## 🧠 Philosophy
-
-> *"@polaris/runtime are self describing runtime which grammar first before the code. The bottleneck speed writing code now has been reduce, understand is."*
-
-**Polaris is a self-describing runtime** designed to make onboarding easy for both **programmers** and **LLMs**.
-
-### How It Works
-
-1. **Grammar First** — Define business logic using a clear, human-readable grammar (Plugins, Workflows, Capabilities)
-2. **Self-Describing** — Explorer auto-generates documentation from the grammar itself
-3. **Same Language** — Both humans and LLMs understand the same structure
-
-### Separation of Concerns
-
-- **Business Logic** → Lives in workflows and capabilities
-- **Presentation** → UI only triggers workflows and renders projections
-- **Runtime** → Executes workflows and manages state
-
-### AI-Native Development
-
-**"LLM build app code with speed of light, programmer audit and understand a whole structure's with explorer before look any code because LLM and human using same grammar."**
-
-| Role | Responsibility |
-|------|----------------|
-| **LLM** | Generate code at speed of light |
-| **Programmer** | Audit, understand, and guide the structure |
-| **Explorer** | Bridge between LLM and human using the same grammar |
-
-### Why This Matters
-
-- ✅ **No more "what does this code do?"** — Explorer shows you
-- ✅ **LLM and Human speak the same language** — Grammar is the contract
-- ✅ **Onboarding is instant** — Understand the whole system before reading a single line of code
-- ✅ **Speed without chaos** — LLM writes fast, Explorer keeps it understandable
-
 ---
 
 ## 📄 License

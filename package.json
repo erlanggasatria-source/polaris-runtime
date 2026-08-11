@@ -4,11 +4,12 @@
     "open": "^11.0.0",
     "typescript": "^5.3.3"
   },
-  "name": "@polaris/runtime",
-  "version": "1.1.0",
+  "name": "@polaris-runtime/core",
+  "version": "1.2.0",
   "description": "Polaris Runtime - Execution engine for business workflows",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": ["dist"],
   "exports": {
     ".": {
       "import": "./dist/index.js",
@@ -23,7 +24,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "workflow",
@@ -31,6 +33,12 @@
     "typescript",
     "polaris"
   ],
+  "peerDependencies": {
+    "typescript": ">=5.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "author": "Polaris Team",
   "license": "MIT"
 }
