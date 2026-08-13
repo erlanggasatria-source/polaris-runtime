@@ -1,15 +1,16 @@
 {
   "devDependencies": {
-    "@types/node": "^26.1.2",
-    "open": "^11.0.0",
+    "@types/node": "^26.1.2",    
     "typescript": "^5.3.3"
   },
   "name": "@polaris-runtime/core",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Polaris Runtime - Execution engine for business workflows",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "import": "./dist/index.js",

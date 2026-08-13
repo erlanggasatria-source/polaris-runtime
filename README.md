@@ -47,10 +47,10 @@ Its only responsibility is to execute business workflows declared by plugins.
 ---
 ## 📚 Documentation
 
-- [Architecture](./ARCHITECTURE.md) — Design principles and core concepts
-- [API Reference](./API.md) — Public API documentation
-- [Changelog](./CHANGELOG.md) — Version history
-- [Contributing](./CONTRIBUTING.md) — How to contribute
+- [Architecture](https://github.com/erlanggasatria-source/polaris-runtime/blob/main/ARCHITECTURE.md) — Design principles and core concepts
+- [API Reference](https://github.com/erlanggasatria-source/polaris-runtime/blob/main/API.md) — Public API documentation
+- [Changelog](https://github.com/erlanggasatria-source/polaris-runtime/blob/main/CHANGELOG.md) — Version history
+- [Contributing](https://github.com/erlanggasatria-source/polaris-runtime/blob/main/CONTRIBUTING.md) — How to contribute
 
 ---
 

@@ -13,6 +13,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 export class PolarisRuntime {
+  private pluginMeta: Map<string, { version: string; description: string }> = new Map();
   private capabilities: Map<string, ICapability> = new Map();
   private workflows: Map<string, IWorkflow> = new Map();
   private globalContext: Map<string, any> = new Map();
@@ -310,6 +311,9 @@ export class PolarisRuntime {
   setAllowedContextWorkflow(workflowPath: string): void {
     logger.verbose(`🔒 Allowed context workflow: ${workflowPath}`);
     this.allowedContextWorkflow = workflowPath;
+    if (this.isDev) {
+      this.generateExplorer();
+    }
   }
 
   getAllowedContextWorkflow(): string | null {
@@ -327,13 +331,17 @@ export class PolarisRuntime {
     logger.verbose(`Registering plugin: ${plugin.name} v${plugin.version}`);
 
     try {
-      const existingPlugin = this.capabilities.has(`${plugin.name}/cap-`) ||
-                             this.workflows.has(`${plugin.name}/wf-`);
+      const existingPlugin = this.pluginMeta.has(plugin.name);
 
       if (existingPlugin) {
         logger.warn(`⚠️ Plugin "${plugin.name}" already registered, skipping...`);
         return;
       }
+
+      this.pluginMeta.set(plugin.name, {
+        version: plugin.version || '1.0.0',
+        description: plugin.description || ''
+      });
 
       if (plugin.capabilities) {
         for (const cap of plugin.capabilities) {
@@ -469,8 +477,7 @@ export class PolarisRuntime {
     if (isNode) {
       try {
         const fs = require('fs');
-        const path = require('path');
-        const open = require('open');
+        const path = require('path');        
         
         const explorerDir = path.join(process.cwd(), 'explorer');
         if (!fs.existsSync(explorerDir)) {
@@ -485,8 +492,7 @@ export class PolarisRuntime {
         fs.writeFileSync(path.join(explorerDir, 'catalog.json'), JSON.stringify(catalog, null, 2));
 
         logger.verbose(`📚 Explorer generated: ${indexPath}`);
-        open(indexPath);
-        logger.verbose(`🌐 Explorer opened in browser`);
+        logger.info(`📄 Open ${indexPath} in your browser to view the 🌐 explorer.`);        
 
       } catch (error) {
         logger.warn(`⚠️ Failed to generate explorer (Node.js):`, error);
@@ -508,36 +514,61 @@ export class PolarisRuntime {
     const workflows = Array.from(this.workflows.keys());
     const pluginMap = new Map<string, any>();
 
-    for (const cap of capabilities) {
-      const plugin = cap.split('/')[0];
-      if (!pluginMap.has(plugin)) {
-        pluginMap.set(plugin, { name: plugin, capabilities: [], workflows: [] });
-      }
-      pluginMap.get(plugin).capabilities.push({ name: cap });
+    // ===== INISIALISASI DARI PLUGIN META =====
+    for (const [name, meta] of this.pluginMeta) {
+      pluginMap.set(name, {
+        name,
+        version: meta.version,
+        description: meta.description,
+        capabilities: [],
+        workflows: [],
+        dependencies: [] as string[]
+      });
     }
 
-    for (const wf of workflows) {
-      const plugin = wf.split('/')[0];
-      if (!pluginMap.has(plugin)) {
-        pluginMap.set(plugin, { name: plugin, capabilities: [], workflows: [] });
+    // ===== CAPABILITIES =====
+    for (const capKey of capabilities) {
+      const pluginName = capKey.split('/')[0];
+      const capObj = this.capabilities.get(capKey);
+      if (pluginMap.has(pluginName) && capObj) {
+        pluginMap.get(pluginName).capabilities.push({
+          name: capKey,
+          description: capObj.description || ''
+        });
       }
-      const workflow = this.workflows.get(wf);
-      pluginMap.get(plugin).workflows.push({
-        name: wf,
-        description: workflow?.description || '',
-        allowed: workflow?.allowed || [],
-        steps: workflow?.steps || []
-      });
+    }
+
+    // ===== WORKFLOWS + DEPENDENCY =====
+    for (const wfKey of workflows) {
+      const pluginName = wfKey.split('/')[0];
+      const workflow = this.workflows.get(wfKey);
+      if (pluginMap.has(pluginName) && workflow) {
+        pluginMap.get(pluginName).workflows.push({
+          name: wfKey,
+          description: workflow.description || '',
+          allowed: workflow.allowed || [],
+          steps: workflow.steps || []
+        });
+
+        // ===== DETECTION DEPENDENCY =====
+        for (const step of workflow.steps) {
+          const capPlugin = step.useCapability.split('/')[0];
+          if (capPlugin !== pluginName && 
+              !pluginMap.get(pluginName).dependencies.includes(capPlugin)) {
+            pluginMap.get(pluginName).dependencies.push(capPlugin);
+          }
+        }
+      }
     }
 
     return {
       runtime: {
         name: 'Polaris Runtime',
-        version: '1.0.0',
+        version: '1.2.1',
         allowedContextWorkflow: this.allowedContextWorkflow
       },
       statistics: {
-        totalPlugins: pluginMap.size,
+        totalPlugins: this.pluginMeta.size,
         totalWorkflows: workflows.length,
         totalCapabilities: capabilities.length
       },
@@ -573,6 +604,14 @@ export class PolarisRuntime {
     .step { padding: 4px 0; font-size: 14px; color: #ccc; border-bottom: 1px solid #1e1e1e; }
     .step .cap { color: #6c63ff; }
     .guard { background: #1a1a2a; padding: 4px 10px; border-radius: 4px; font-size: 13px; display: inline-block; margin: 2px 4px 2px 0; border: 1px solid #2a2a3a; }
+    .plugin-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;}
+    .plugin-version { background: #1a1a2a; color: #6c63ff; padding: 2px 10px; border-radius: 12px; font-size: 12px; border: 1px solid #2a2a3a; }
+    .plugin-desc { color: #888; font-size: 14px; margin-top: 4px; font-style: italic; padding-bottom: 10px; }
+    .plugin-dependencies { margin-top: 8px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding-bottom: 20px; }
+    .dep-label { color: #666; font-size: 12px; }
+    .dep-badge { background: #1a2a3a; color: #6caf7a; padding: 2px 8px; border-radius: 4px; font-size: 12px; border: 1px solid #2a3a4a; }
+    .capability-desc { color: #888; font-size: 13px; margin-top: 2px; font-style: italic; }
+    .depends-on { color: #f7d44a; font-size: 12px; margin-left: 6px; }
   </style>
   </head>
   <body>
@@ -603,10 +642,23 @@ export class PolarisRuntime {
   function renderPlugin(name) {
     const plugin = data.plugins.find(p => p.name === name);
     if (!plugin) return renderOverview();
-    let html = \`<h2>📦 \${plugin.name}</h2>\`;
+    let html = \`
+      <div class="plugin-header">
+        <h2>📦 \${plugin.name}</h2>
+        <span class="plugin-version">v\${plugin.version}</span>
+      </div>
+      \${plugin.description ? \`<div class="plugin-desc">\${plugin.description}</div>\` : ''}
+      \${plugin.dependencies && plugin.dependencies.length > 0 ? \`
+        <div class="plugin-dependencies">
+          <span class="dep-label">🔗 Depends on:</span>
+          \${ plugin.dependencies.map((dep) => \`<span class="dep-badge">\${dep}</span>\`).join('') }
+        </div>
+      \` : ''}
+    \`;
     if (plugin.capabilities?.length) {
       html += \`<h3>⚡ Capabilities</h3>\`;
-      plugin.capabilities.forEach(c => { html += \`<div class="card"><div class="card-title">\${c.name}</div></div>\`; });
+      plugin.capabilities.forEach(c => { 
+      html += \`<div class="card"><div class="card-title">\${c.name}</div>\${c.description ? \`<div class="capability-desc">\${c.description}</div>\` : ''}</div>\`;});
     }
     if (plugin.workflows?.length) {
       html += \`<h3>🔄 Workflows</h3>\`;
@@ -622,7 +674,9 @@ export class PolarisRuntime {
         }
         
         // Steps
-        html += \`<div>\${w.steps.map(s => \`<div class="step">▸ \${s.name} → <span class="cap">\${s.useCapability}</span></div>\`).join('')}</div></div>\`;
+        html += \`<div>\${w.steps.map(s => \`<div class="step">▸ \${s.name} → <span class="cap">\${s.useCapability}</span>
+        \${s.dependsOn && s.dependsOn.length > 0 ? \`<span class="depends-on">(depends on: \${s.dependsOn.join(', ')})</span>\` : ''}
+        </div>\`).join('')}</div></div>\`;
       });
     }
     content.innerHTML = html;
