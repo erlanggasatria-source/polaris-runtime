@@ -239,7 +239,6 @@ export class PolarisRuntime {
   // Check permission
   canExecute(workflowPath: string, input: any = {}): { allowed: boolean; reason?: string } {
     logger.verbose(`🔍 Checking permission: ${workflowPath}`);
-
     const workflow = this.workflows.get(workflowPath);
     if (!workflow) {
       return { allowed: false, reason: `Workflow "${workflowPath}" not found` };
@@ -251,25 +250,16 @@ export class PolarisRuntime {
     }
 
     for (const guard of workflow.allowed) {
-      let actualValue: any;
-      if (guard.source === 'context') {
-        actualValue = this.globalContext.get(guard.key);
-      } else {
-        actualValue = input[guard.key];
-      }
-
-      const operator = guard.operator || 'eq';
-      let passed = false;
-      switch (operator) {
-        case 'eq': passed = actualValue === guard.value; break;
-        case 'neq': passed = actualValue !== guard.value; break;
-        case 'in': passed = Array.isArray(guard.value) && guard.value.includes(actualValue); break;
-        case 'nin': passed = Array.isArray(guard.value) && !guard.value.includes(actualValue); break;
-        default: passed = false;
-      }
-
+      const { passed, actualValue, expectedValue } = this.checkGuard(guard, input);
       if (!passed) {
-        const reason = `Guard failed: ${guard.source}.${guard.key} ${operator} ${guard.value} (actual: ${actualValue})`;
+        // Format expected value untuk log
+        let expectedStr: string;
+        if (guard.value && typeof guard.value === 'object' && guard.value.key && guard.value.source) {
+          expectedStr = `{${guard.value.source}.${guard.value.key}}`;
+        } else {
+          expectedStr = JSON.stringify(guard.value);
+        }
+        const reason = `Guard failed: ${guard.source}.${guard.key} ${guard.operator||'eq'} ${expectedStr} (actual: ${actualValue})`;
         logger.warn(`  ❌ ${reason}`);
         return { allowed: false, reason };
       }
@@ -450,7 +440,8 @@ export class PolarisRuntime {
     this.stateCleanupTimers.set(executionId, timer);
   }
 
-  private checkGuard(guard: IAllowedGuard, input: any): boolean {
+  private checkGuard(guard: IAllowedGuard, input: any): { passed: boolean; actualValue: any; expectedValue: any; } {
+    // 1. Ambil actualValue
     let actualValue: any;
     if (guard.source === 'context') {
       actualValue = this.globalContext.get(guard.key);
@@ -458,14 +449,33 @@ export class PolarisRuntime {
       actualValue = input[guard.key];
     }
 
-    const operator = guard.operator || 'eq';
-    switch (operator) {
-      case 'eq': return actualValue === guard.value;
-      case 'neq': return actualValue !== guard.value;
-      case 'in': return Array.isArray(guard.value) && guard.value.includes(actualValue);
-      case 'nin': return Array.isArray(guard.value) && !guard.value.includes(actualValue);
-      default: return false;
+    // 2. Tentukan expectedValue
+    let expectedValue: any = guard.value;
+    // Cek apakah guard.value adalah object dengan key dan source (dynamic)
+    if (guard.value && typeof guard.value === 'object' && guard.value.key && guard.value.source) {
+      if (guard.value.source === 'context') {
+        expectedValue = this.globalContext.get(guard.value.key);
+      } else {
+        expectedValue = input[guard.value.key];
+      }
     }
+
+    // 3. Evaluasi operator
+    const operator = guard.operator || 'eq';
+    let passed = false;
+    switch (operator) {
+      case 'eq': passed = actualValue === expectedValue; break;
+      case 'neq': passed = actualValue !== expectedValue; break;
+      case 'in': passed = Array.isArray(expectedValue) && expectedValue.includes(actualValue); break;
+      case 'nin': passed = Array.isArray(expectedValue) && !expectedValue.includes(actualValue); break;
+      case 'gt': passed = actualValue > expectedValue; break;
+      case 'lt': passed = actualValue < expectedValue; break;
+      case 'gte': passed = actualValue >= expectedValue; break;
+      case 'lte': passed = actualValue <= expectedValue; break;
+      default: passed = false;
+    }
+
+    return { passed, actualValue, expectedValue };
   }
 
   // ===== EXPLORER GENERATOR (AUTO) =====
@@ -531,10 +541,18 @@ export class PolarisRuntime {
       const pluginName = capKey.split('/')[0];
       const capObj = this.capabilities.get(capKey);
       if (pluginMap.has(pluginName) && capObj) {
-        pluginMap.get(pluginName).capabilities.push({
+        const capData: any = {
           name: capKey,
           description: capObj.description || ''
-        });
+        }
+        // ===== SCHEMA =====
+        if (capObj.inputSchema) {
+          capData.inputSchema = capObj.inputSchema;
+        }
+        if (capObj.outputSchema) {
+          capData.outputSchema = capObj.outputSchema;
+        }
+        pluginMap.get(pluginName).capabilities.push(capData);
       }
     }
 
@@ -612,6 +630,9 @@ export class PolarisRuntime {
     .dep-badge { background: #1a2a3a; color: #6caf7a; padding: 2px 8px; border-radius: 4px; font-size: 12px; border: 1px solid #2a3a4a; }
     .capability-desc { color: #888; font-size: 13px; margin-top: 2px; font-style: italic; }
     .depends-on { color: #f7d44a; font-size: 12px; margin-left: 6px; }
+    details { margin-top: 8px;}
+    details summary { color: #888; cursor: pointer; font-size: 13px; }
+    details pre { background: #0b0b0b; padding: 12px; border-radius: 6px; font-size: 12px; margin-top: 4px; border: 1px solid #2a2a2a; color: #e0e0e0; }
   </style>
   </head>
   <body>
@@ -658,7 +679,14 @@ export class PolarisRuntime {
     if (plugin.capabilities?.length) {
       html += \`<h3>⚡ Capabilities</h3>\`;
       plugin.capabilities.forEach(c => { 
-      html += \`<div class="card"><div class="card-title">\${c.name}</div>\${c.description ? \`<div class="capability-desc">\${c.description}</div>\` : ''}</div>\`;});
+      html += \`<div class="card"><div class="card-title">\${c.name}</div>\${c.description ? \`<div class="capability-desc">\${c.description}</div>\` : ''}\`
+      if (c.inputSchema) {
+      html += \`<details><summary>📥 Input Schema</summary><pre>\${JSON.stringify(c.inputSchema, null, 2)}</pre></details>\`;
+      }
+      if (c.outputSchema) {
+        html += \`<details><summary>📤 Output Schema</summary><pre>\${JSON.stringify(c.outputSchema, null, 2)}</pre></details>\`;
+      }
+      html += \`</div>\`;});
     }
     if (plugin.workflows?.length) {
       html += \`<h3>🔄 Workflows</h3>\`;
@@ -668,7 +696,13 @@ export class PolarisRuntime {
         
         // Allowed
         if (w.allowed?.length) {
-          html += \`<div>\${w.allowed.map(g => \`<span class="guard">\${g.source}.\${g.key} \${g.operator||'eq'} \${g.value}</span>\`).join('')}</div>\`;
+          html += \`<div>\${w.allowed.map(g => {
+          let displayValue = g.value;
+          if (g.valueSource && g.valueKey) {
+            displayValue = \`{\${g.valueSource}.\${g.valueKey}}\`;
+          }
+          return \`<span class="guard">\${g.source}.\${g.key} \${g.operator||'eq'} \${displayValue}</span>\`;
+        }).join('')}</div>\`;
         } else {
           html += \`<div><span class="guard" style="color:#888;">No restrictions</span></div>\`;
         }

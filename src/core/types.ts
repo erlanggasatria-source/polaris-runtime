@@ -13,6 +13,8 @@ export interface IPlugin {
 export interface ICapability {
   name: string;
   description?: string;
+  inputSchema?: Record<string, any>;   // JSON Schema (opsional)
+  outputSchema?: Record<string, any>;  // JSON Schema (opsional)
   run: (input: any, context: IContext) => any | Promise<any>;
 }
 
@@ -34,7 +36,7 @@ export interface IAllowedGuard {
   key: string;
   value: any;
   source: 'context' | 'input';
-  operator?: 'eq' | 'neq' | 'in' | 'nin';
+  operator?: 'eq' | 'neq' | 'in' | 'nin' | 'gt' | 'lt' | 'gte' | 'lte'; 
 }
 
 export interface IContext {
