@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-08-17
+
+### Added
+- **Capability Schema**  
+  `inputSchema` and `outputSchema` using JSON Schema for documentation and LLM support.  
+  → Displayed in Explorer and included in `catalog.json`.
+
+- **Dynamic Allowed Guard**  
+  Guard now supports dynamic value references: `{ "value": { "key": "userId", "source": "context" } }`.  
+  → Enables comparison of `input.createdBy` with `context.userId`.
+
+- **Multiple Dependencies Support (`dependsOn`)**  
+  Steps with 2+ `dependsOn` now merge payloads from all dependencies.  
+  → Non-object payloads are stored under the step name as key.  
+  → Preserves `IResult` structure from the first dependency.
+
+### Changed
+- **`dependsOn` Merge Logic** → now uses spread operator to merge payloads.
+- **Logger** → added warnings for non-object payloads and missing dependencies.
+
+### Fixed
+- **`dependsOn`** → previously only 1 dependency worked properly; now multiple dependencies are fully supported.
+
+### Added (Testing)
+- **Comprehensive Unit Tests** → 7 test files with 35+ test cases covering all runtime features.
+
+### Removed
+- None
+
+### Deprecated
+- None
+
 ## [1.2.1] - 2026-08-13
 
 ### Added

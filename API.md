@@ -84,7 +84,7 @@ Returns a copy of the global context.
 
 ## Types
 
-### IPlugin
+### `IPlugin`
 
 ```typescript
 
@@ -99,18 +99,20 @@ interface IPlugin {
 
 ---
 
-### ICapability
+### `ICapability`
 ```typescript
 
 interface ICapability {
   name: string;
   description?: string;
+  inputSchema?: Record<string, any>;   // JSON Schema for input
+  outputSchema?: Record<string, any>;  // JSON Schema for output
   run: (input: any, context: IContext) => any | Promise<any>;
 }
 ```
 ---
 
-### IWorkflow
+### `IWorkflow`
 ```typescript
 
 interface IWorkflow {
@@ -122,7 +124,7 @@ interface IWorkflow {
 ```
 ---
 
-### IStep
+### `IStep`
 ```typescript
 
 interface IStep {
@@ -134,19 +136,21 @@ interface IStep {
 ```
 ---
 
-### IAllowedGuard
+### `IAllowedGuard` (Dynamic Value)
 ```typescript
 
 interface IAllowedGuard {
   key: string;
   value: any;
   source: 'context' | 'input';
-  operator?: 'eq' | 'neq' | 'in' | 'nin';
+  operator?: 'eq' | 'neq' | 'in' | 'nin' | 'gt' | 'lt' | 'gte' | 'lte';
+  // Dynamic value: compare input.key with context.otherKey
+  // value: { key: 'userId', source: 'context' }
 }
 ```
 ---
 
-### IWorkflowEvent
+### `IWorkflowEvent`
 ```typescript
 
 interface IWorkflowEvent {
@@ -165,7 +169,7 @@ interface IWorkflowEvent {
 ```
 ---
 
-### IResult (Helper)
+### `IResult` (Helper)
 ```typescript
 
 interface IResult {

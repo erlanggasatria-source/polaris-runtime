@@ -125,15 +125,41 @@ export class PolarisRuntime {
 
         let stepInput: any;
         if (step.dependsOn && step.dependsOn.length > 0) {
-          stepInput = {};
-          for (const dep of step.dependsOn) {
-            const depResult = context.steps.get(dep);
-            if (depResult) {
-              stepInput = { ...stepInput, ...depResult };
+          let mergedPayload: any = {};
+      let baseResult: any = null;
+
+      for (const dep of step.dependsOn) {
+        const depResult = context.steps.get(dep);
+          if (depResult) {
+            // Ambil payload dari depResult
+            const payload = depResult.payload !== undefined ? depResult.payload : depResult;
+            
+            if (typeof payload === 'object' && payload !== null) {
+              mergedPayload = { ...mergedPayload, ...payload };
             } else {
-              logger.warn(`   ⚠️ Dependency "${dep}" not found, skipping...`);
+              mergedPayload[dep] = payload;
+              logger.warn(`   ⚠️ Dependency "${dep}" returned non-object payload, stored under key "${dep}"`);
             }
+
+            // Simpan baseResult pertama (untuk mempertahankan IResult)
+            if (!baseResult) {
+              baseResult = depResult;
+            }
+          } else {
+            logger.warn(`   ⚠️ Dependency "${dep}" not found, skipping...`);
           }
+        }
+
+        if (baseResult) {
+          // Gabungkan payload ke baseResult
+          stepInput = {
+            ...baseResult,
+            payload: mergedPayload
+          };
+        } else {
+          // Tidak ada dependency yang ditemukan
+          stepInput = {};
+        }
         } else {
           stepInput = result;
         }
@@ -311,7 +337,7 @@ export class PolarisRuntime {
   }
 
   getGlobalContext(): Map<string, any> {
-    console.log('📦 getGlobalContext() called, size:', this.globalContext.size);
+    logger.info('📦 getGlobalContext() called, size:', this.globalContext.size);
     return new Map(this.globalContext);
   }
 

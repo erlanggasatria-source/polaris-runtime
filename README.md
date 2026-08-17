@@ -23,7 +23,7 @@ Its only responsibility is to execute business workflows declared by plugins.
 
 ### Separation of Concerns
 
-- **Business Logic** → Lives in workflows and capabilities
+- **Business Logic** → Lives in workflows and capabilities, its **your agnostic asset**
 - **Presentation** → UI only triggers workflows and renders projections
 - **Runtime** → Executes workflows and manages state
 
@@ -117,6 +117,7 @@ import { PolarisRuntime } from '@polarisruntime/core';
 | Step	        | Executes exactly one capability       |
 | Context	    | Carries data between steps            |
 | Allowed       | Defines who can execute a workflow    |
+| Schema  | Input/output contract for capabilities  |
 ---
 
 ## 🧩 Example Plugin with Timeout & Allowed Rule
@@ -192,6 +193,50 @@ export const ReportPlugin: IPlugin = {
   ]
 };
 ```
+
+## 🧩 Example Plugin with Schema
+
+```typescript
+// plugins/meeting.plugin.ts
+import { IPlugin } from '@polaris-runtime/core';
+
+export const MeetingPlugin: IPlugin = {
+  name: 'meeting',
+  version: '1.0.0',
+  description: 'Meeting management',
+  capabilities: [
+    {
+      name: 'meeting/cap-create',
+      description: 'Create a new meeting',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'Meeting title' },
+          date: { type: 'string', format: 'date' },
+          agenda: { type: 'string', description: 'One per line' }
+        },
+        required: ['title', 'date']
+      },
+      outputSchema: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          status: { type: 'string' }
+        }
+      },
+      run: (input) => {
+        // ... implementation
+        return { id: 'meet-001', status: 'draft' };
+      }
+    }
+  ],
+  workflows: [
+    // ...
+  ]
+};
+```
+
+---
 
 ### ⏱️ Timeout Management
 
@@ -314,6 +359,22 @@ if (allowed) {
 }
 ```
 
+### Dynamic Guard
+
+Compare input with context:
+```typescript
+allowed: [
+  {
+    key: 'createdBy',
+    source: 'input',
+    operator: 'neq',
+    value: { key: 'userId', source: 'context' }
+  }
+]
+```
+
+Meaning: input.createdBy != context.userId
+
 ### 📊 Summary
 
 | Feature	| Default	                    | Customization                                     |
@@ -335,7 +396,7 @@ In development mode, Explorer auto-generates:
 
     Step dependencies
 
-    Capability registry
+    Capability registry (with schema if we describe it)
 
 ```typescript
 
@@ -344,6 +405,35 @@ import { PolarisRuntime } from '@polaris/runtime/dev';
 const runtime = new PolarisRuntime(); // auto-explorer enabled
 runtime.register([...]); // explorer opens automatically
 ```
+---
+
+## 🧪 Unit Tests
+
+```bash
+# Run all tests
+npm run test
+
+# Run tests with coverage
+npm run test:coverage
+
+# Run tests in watch mode
+npm run test:watch
+```
+
+### Test Structure
+```text
+tests/
+├── runtime.test.ts              # Core runtime
+├── event-state.test.ts          # Event & state
+├── idempotency.test.ts          # Idempotency
+├── timeout.test.ts              # Timeout
+├── dynamic-guard.test.ts        # Dynamic guard
+├── cross-plugin.test.ts         # Cross-plugin dependency
+├── dag.test.ts                  # dependsOn
+└── utils/
+    └── mock-plugins.ts          # Shared mock plugins
+```
+
 ---
 
 ## 📄 License
