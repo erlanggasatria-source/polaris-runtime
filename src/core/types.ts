@@ -21,7 +21,7 @@ export interface ICapability {
 export interface IWorkflow {
   name: string;
   description?: string;
-  allowed?: IAllowedGuard[];
+  allowed?: IAllowed;
   steps: IStep[];
 }
 
@@ -38,6 +38,14 @@ export interface IAllowedGuard {
   source: 'context' | 'input';
   operator?: 'eq' | 'neq' | 'in' | 'nin' | 'gt' | 'lt' | 'gte' | 'lte'; 
 }
+
+export interface IExpressionGuard {
+  expr: string;
+  context?: string[];
+  input?: string[];
+}
+// ===== ALLOWED = array OR single expression =====
+export type IAllowed = IAllowedGuard[] | IExpressionGuard;
 
 export interface IContext {
   id: string;

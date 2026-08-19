@@ -6,11 +6,13 @@ import {
   IWorkflowEvent,
   IWorkflowState,
   IAllowedGuard,
-  IResult
+  IResult,
+  IExpressionGuard
 } from './types';
 import { logger, LogLevel } from './logger';
 import * as fs from 'fs';
 import * as path from 'path';
+import { isTypedArray } from 'util/types';
 
 export class PolarisRuntime {
   private pluginMeta: Map<string, { version: string; description: string }> = new Map();
@@ -71,15 +73,27 @@ export class PolarisRuntime {
       throw new Error(`Workflow "${workflowPath}" not found`);
     }
 
-    if (workflow.allowed && workflow.allowed.length > 0) {
-      logger.verbose(`🛡️ Checking guards for: ${workflowPath}`);
-      for (const guard of workflow.allowed) {
-        const passed = this.checkGuard(guard, input);
-        logger.verbose(`   ${guard.source}.${guard.key} ${guard.operator || 'eq'} ${guard.value} → ${passed ? '✅' : '❌'}`);
-        if (!passed) {
-          const error = new Error(`Workflow "${workflowPath}" not allowed to execute`);
-          logger.error(`❌ ${error.message}`);
-          throw error;
+    if (this.isExpressionGuard(workflow.allowed)){
+      const { passed, actualValue, expectedValue }  = this.checkExpression(workflow.allowed, input);
+      logger.verbose(`   ${expectedValue} ${actualValue} → ${passed ? '✅' : '❌'}`);
+      if (!passed) {
+        const error = new Error(`Workflow "${workflowPath}" not allowed to execute`);
+        logger.error(`❌ ${error.message}`);
+        throw error;
+      }
+    }
+    else
+    {
+      if (workflow.allowed && workflow.allowed.length > 0) {
+        logger.verbose(`🛡️ Checking guards for: ${workflowPath}`);
+        for (const guard of workflow.allowed) {
+          const passed = this.checkGuard(guard, input);
+          logger.verbose(`   ${guard.source}.${guard.key} ${guard.operator || 'eq'} ${guard.value} → ${passed ? '✅' : '❌'}`);
+          if (!passed) {
+            const error = new Error(`Workflow "${workflowPath}" not allowed to execute`);
+            logger.error(`❌ ${error.message}`);
+            throw error;
+          }
         }
       }
     }
@@ -270,24 +284,35 @@ export class PolarisRuntime {
       return { allowed: false, reason: `Workflow "${workflowPath}" not found` };
     }
 
-    if (!workflow.allowed || workflow.allowed.length === 0) {
+    if (!workflow.allowed || (!this.isExpressionGuard(workflow.allowed) && workflow.allowed.length === 0)) {
       logger.verbose(`  ✅ No guards, allowed`);
       return { allowed: true };
     }
 
-    for (const guard of workflow.allowed) {
-      const { passed, actualValue, expectedValue } = this.checkGuard(guard, input);
+    if (this.isExpressionGuard(workflow.allowed)){
+      const checkExpression = this.checkExpression(workflow.allowed, input)      
+      const { passed, actualValue, expectedValue } = checkExpression;
       if (!passed) {
-        // Format expected value untuk log
-        let expectedStr: string;
-        if (guard.value && typeof guard.value === 'object' && guard.value.key && guard.value.source) {
-          expectedStr = `{${guard.value.source}.${guard.value.key}}`;
-        } else {
-          expectedStr = JSON.stringify(guard.value);
-        }
-        const reason = `Guard failed: ${guard.source}.${guard.key} ${guard.operator||'eq'} ${expectedStr} (actual: ${actualValue})`;
+        const reason = `Guard failed: ${expectedValue} (actual: ${actualValue})`;
         logger.warn(`  ❌ ${reason}`);
         return { allowed: false, reason };
+      }      
+    } else
+    {
+      for (const guard of workflow.allowed) {
+        const { passed, actualValue, expectedValue } = this.checkGuard(guard, input);
+        if (!passed) {
+          // Format expected value untuk log
+          let expectedStr: string;
+          if (guard.value && typeof guard.value === 'object' && guard.value.key && guard.value.source) {
+            expectedStr = `{${guard.value.source}.${guard.value.key}}`;
+          } else {
+            expectedStr = JSON.stringify(guard.value);
+          }
+          const reason = `Guard failed: ${guard.source}.${guard.key} ${guard.operator||'eq'} ${expectedStr} (actual: ${actualValue})`;
+          logger.warn(`  ❌ ${reason}`);
+          return { allowed: false, reason };
+        }
       }
     }
 
@@ -504,6 +529,81 @@ export class PolarisRuntime {
     return { passed, actualValue, expectedValue };
   }
 
+  private checkExpression(guard: IExpressionGuard, input: any): { passed: boolean; actualValue: any; expectedValue: any; } {
+    // 1. Kumpulkan variable dari context dan input
+    const vars: Record<string, any> = {};
+
+    for (const key of guard.context || []) {
+      vars[key] = this.globalContext.get(key);
+    }
+    for (const key of guard.input || []) {
+      vars[key] = input[key];
+    }    
+
+    // 2. Validasi keamanan
+    if (!this.isSafeExpression(guard.expr)) {
+      logger.error(`❌ Unsafe expression: ${guard.expr}`);
+      return { 
+        passed: false, 
+        actualValue: 'unsafe expression', 
+        expectedValue: guard.expr
+      }
+    }
+
+    // 3. Eksekusi ekspresi
+    try {      
+      const fn = new Function(...Object.keys(vars), `return ${guard.expr}`);      
+      if(!fn(...Object.values(vars))){
+        return { 
+          passed: false, 
+          actualValue: `${Object.keys(vars).join(', ')} = ${Object.values(vars).join(', ')}`, 
+          expectedValue: guard.expr
+        }
+      };
+      return { 
+        passed: true, 
+        actualValue: 'expression evaluation success', 
+        expectedValue: guard.expr
+      }
+    } catch (error) {
+      error
+      logger.error(`❌ Expression evaluation error: ${guard.expr}`, error);      
+      return { 
+        passed: false, 
+        actualValue: 'expression evaluation error', 
+        expectedValue: guard.expr
+      }
+    }
+  }
+
+  private isSafeExpression(expr: string): boolean {
+    const forbidden = [
+      // --- 1. Execution & Code Generation ---
+      'eval', 'Function', 'setTimeout', 'setInterval', 'setImmediate', 'queueMicrotask',
+      // --- 2. Prototype & Object Mutation (Injection Vectors) --- 'constructor', '__proto__', 'prototype', 'Object',
+      'Reflect', 'Proxy', 'this', 'arguments',
+      // --- 3. Global Scope & Environment Handles ---
+      'global', 'globalThis', 'window', 'self', 'top', 'parent', 'frames',
+      // --- 4. Node.js & Module System ---
+      'process', 'require', 'import', 'export', 'module', '__dirname', '__filename', 'Buffer',
+      // --- 5. Built-in Utility & Math Globals ---
+      'Math', 'Date', 'JSON', 'RegExp', 'Array', 'String', 'Number', 'Boolean', 'Symbol', 'BigInt', 'Error', 'Promise', 'Map', 'Set', 'WeakMap', 'WeakSet',
+      // --- 6. Network, I/O & Storage APIs ---
+      'fetch', 'XMLHttpRequest', 'WebSocket', 'Worker', 'SharedWorker', 'ServiceWorker', 'navigator', 'location', 'document', 'localStorage', 'sessionStorage', 'indexedDB', 'cookieStore',
+      // --- 7. Debugging & Console ---
+      'console', 'debugger'
+    ];
+    for (const word of forbidden) {
+      if (expr.includes(word)) return false;
+    }
+    if (expr.length > 500) return false;
+    return true;
+  }
+
+  private isExpressionGuard(allowed: any): allowed is IExpressionGuard {
+    return allowed && typeof allowed === 'object' && 'expr' in allowed;
+  }
+
   // ===== EXPLORER GENERATOR (AUTO) =====
   private generateExplorer(): void {
     const isNode = typeof process !== 'undefined' && process.versions?.node;
@@ -591,6 +691,7 @@ export class PolarisRuntime {
           name: wfKey,
           description: workflow.description || '',
           allowed: workflow.allowed || [],
+          allowedType: this.getAllowedType(workflow.allowed),
           steps: workflow.steps || []
         });
 
@@ -608,7 +709,7 @@ export class PolarisRuntime {
     return {
       runtime: {
         name: 'Polaris Runtime',
-        version: '1.2.1',
+        version: '2.0.0.alpha.0',
         allowedContextWorkflow: this.allowedContextWorkflow
       },
       statistics: {
@@ -659,6 +760,11 @@ export class PolarisRuntime {
     details { margin-top: 8px;}
     details summary { color: #888; cursor: pointer; font-size: 13px; }
     details pre { background: #0b0b0b; padding: 12px; border-radius: 6px; font-size: 12px; margin-top: 4px; border: 1px solid #2a2a2a; color: #e0e0e0; }
+    .allowed-section { margin: 8px 0; padding: 8px 12px; background: #0b0b0b; border-radius: 6px; }
+    .allowed-label { color: #888; font-size: 12px; font-weight: 600; }
+    .guard { background: #1a1a2a; color: #6c63ff; padding: 2px 8px; border-radius: 4px; font-size: 12px; border: 1px solid #2a2a3a; margin: 2px 4px 2px 0; display: inline-block; }
+    .expression .expr { display: block; font-family: 'Courier New', monospace; color: #f7d44a; font-size: 14px; padding: 4px 0; background: #0a0a0a; border-radius: 4px; }
+    .expr-context, .expr-input { display: inline-block; color: #6caf7a; font-size: 12px; margin-right: 12px; }
   </style>
   </head>
   <body>
@@ -721,16 +827,31 @@ export class PolarisRuntime {
         html += \`<div class="card"><div class="card-title">\${w.name} \${isAllowed ? '<span class="badge-allowed">🔒 Allowed Context</span>' : ''}</div><div class="card-desc">\${w.description}</div>\`;
         
         // Allowed
-        if (w.allowed?.length) {
-          html += \`<div>\${w.allowed.map(g => {
-          let displayValue = g.value;
-          if (g.valueSource && g.valueKey) {
-            displayValue = \`{\${g.valueSource}.\${g.valueKey}}\`;
+        if (w.allowed) {
+          if (w.allowedType === 'array') {
+            html += \`<div class="allowed-section">\`;
+            html += \`<span class="allowed-label">🛡️ Allowed:</span>\`;
+            html += w.allowed.map((g) => {
+              const valueLabel = g.value?.key && g.value?.source 
+                ? \`{\${g.value.source}.\${g.value.key}}\` 
+                : JSON.stringify(g.value);
+              return \`<span class="guard">\${g.source}.\${g.key} \${g.operator||'eq'} \${valueLabel}</span>\`;
+            }).join(' ');
+            html += \`</div>\`;
+          } else if (w.allowedType === 'expression') {
+            html += \`<div class="allowed-section expression">\`;
+            html += \`<span class="allowed-label">🧠 Expression:</span>\`;
+            html += \`<span class="expr">\${w.allowed.expr}</span>\`;
+            if (w.allowed.context?.length) {
+              html += \`<span class="expr-context">📥 context: \${w.allowed.context.join(', ')}</span>\`;
+            }
+            if (w.allowed.input?.length) {
+              html += \`<span class="expr-input">📥 input: \${w.allowed.input.join(', ')}</span>\`;
+            }
+            html += \`</div>\`;
+          } else {
+            html += \`<div class="allowed-section"><span class="allowed-label">🛡️ Allowed:</span> No restrictions</div>\`;
           }
-          return \`<span class="guard">\${g.source}.\${g.key} \${g.operator||'eq'} \${displayValue}</span>\`;
-        }).join('')}</div>\`;
-        } else {
-          html += \`<div><span class="guard" style="color:#888;">No restrictions</span></div>\`;
         }
         
         // Steps
@@ -754,6 +875,13 @@ export class PolarisRuntime {
   </script>
   </body>
   </html>`;
+  }
+
+  private getAllowedType(allowed: any): 'none' | 'array' | 'expression' {
+    if (!allowed) return 'none';
+    if (Array.isArray(allowed)) return 'array';
+    if (allowed.expr) return 'expression';
+    return 'none';
   }
 
   private openExplorerInBrowser(): void {

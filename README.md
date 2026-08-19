@@ -304,6 +304,13 @@ allowed: [
     operator?: 'eq' | 'neq' | 'in' | 'nin'  // Optional, defaults to 'eq'
   }
 ]
+
+\\v2.0.0+ implement expression-based
+allowed: {
+    expr: 'status == "draft" && createdBy == userId',
+    context: ['userId'],    // Variables from global context
+    input: ['status', 'createdBy'] // Variables from workflow input
+  }
 ```
 
 Examples
@@ -359,7 +366,7 @@ if (allowed) {
 }
 ```
 
-### Dynamic Guard
+### Dynamic Guard with Array-based or Expression-based
 
 Compare input with context:
 ```typescript
@@ -371,16 +378,23 @@ allowed: [
     value: { key: 'userId', source: 'context' }
   }
 ]
+// or using exppression
+allowed: {
+    expr: 'createdBy !== userId',
+    context: ['userId'], input: ['createdBy'] 
+  }
 ```
 
 Meaning: input.createdBy != context.userId
+
+Security: Expressions are sandboxed (no require, eval, Math.*, etc.) and limited to 500 characters.
 
 ### 📊 Summary
 
 | Feature	| Default	                    | Customization                                     |
 |:---       | :---                          | :---                                              |
 | Timeout	| 30,000ms (30s)                | Per step: timeout: number (ms) or 0 for infinite  |
-| Allowed   | None (everyone can execute)	| Per workflow: allowed: IAllowedGuard[]            |
+| Allowed   | None (everyone can execute)	| Per workflow: allowed: IAllowedGuard[ ] or IExpressionGuard            |
 
 For complete examples, check the polaris-examples repository.
 
@@ -430,6 +444,7 @@ tests/
 ├── dynamic-guard.test.ts        # Dynamic guard
 ├── cross-plugin.test.ts         # Cross-plugin dependency
 ├── dag.test.ts                  # dependsOn
+├── exp-guard.test.ts            # Expression guard
 └── utils/
     └── mock-plugins.ts          # Shared mock plugins
 ```

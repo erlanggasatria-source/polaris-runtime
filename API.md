@@ -118,9 +118,11 @@ interface ICapability {
 interface IWorkflow {
   name: string;
   description?: string;
-  allowed?: IAllowedGuard[];
+  allowed?: IAllowed;
   steps: IStep[];
 }
+// ===== ALLOWED = array OR single expression =====
+type IAllowed = IAllowedGuard[] | IExpressionGuard;
 ```
 ---
 
@@ -147,6 +149,25 @@ interface IAllowedGuard {
   // Dynamic value: compare input.key with context.otherKey
   // value: { key: 'userId', source: 'context' }
 }
+```
+---
+
+### `IExpressionGuard` (NEW v2.0.0+)
+Defines a workflow guard using a safe JavaScript expression.
+
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `expr` | `string` | The JavaScript expression to evaluate (e.g., `status == "draft"`). |
+| `context` | `string[]` | *(Optional)* List of keys to extract from the **Global Context**. |
+| `input` | `string[]` | *(Optional)* List of keys to extract from the **Workflow Input**. |
+
+**Example:**
+```typescript
+const guard: IExpressionGuard = {
+  expr: 'status == "draft" && (role == "admin" || createdBy == userId)',
+  context: ['role', 'userId'],
+  input: ['status', 'createdBy']
+};
 ```
 ---
 
