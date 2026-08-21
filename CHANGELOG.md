@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-08-21
+
+### Added
+- **Expression-based Guards (`IExpressionGuard`)**: Workflows now support complex conditional logic using safe JavaScript expressions (e.g., `status == "draft" && createdBy == userId`). 
+- **Input and Outpur Schema on Workflow (`IWorkflow`)**: Experiment with LLM build new UI for existing example app, **LLM guessing input** use in `execute` and `canExecute`, so input and out schema added to workflow for complete self-describe explore read by Human and LLM so become **fully AI-Native** runtime
+
+### Changed
+- **`allowed` Type Union**: The `allowed` field in `IWorkflow` now supports both `IAllowedGuard[]` (array) and `IExpressionGuard` (object with `expr`), improving IDE intellisense in VSCode.
+- **Consistent Guard Response**: Both `checkGuard` and `checkExpression` now return a uniform structure `{ passed, actualValue, expectedValue }` for better logging and debugging.
+
 ## [2.0.0-alpha.0] - 2026-08-19
 
 ### Added
