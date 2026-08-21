@@ -119,6 +119,8 @@ interface IWorkflow {
   name: string;
   description?: string;
   allowed?: IAllowed;
+  inputSchema?: Record<string, any>;
+  outputSchema?: Record<string, any>;
   steps: IStep[];
 }
 // ===== ALLOWED = array OR single expression =====

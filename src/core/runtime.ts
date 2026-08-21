@@ -687,13 +687,21 @@ export class PolarisRuntime {
       const pluginName = wfKey.split('/')[0];
       const workflow = this.workflows.get(wfKey);
       if (pluginMap.has(pluginName) && workflow) {
-        pluginMap.get(pluginName).workflows.push({
+        const wfData: any = {
           name: wfKey,
           description: workflow.description || '',
           allowed: workflow.allowed || [],
           allowedType: this.getAllowedType(workflow.allowed),
           steps: workflow.steps || []
-        });
+        };        
+        if (workflow.inputSchema) {
+          wfData.inputSchema = workflow.inputSchema;
+        }
+        if (workflow.outputSchema) {
+          wfData.outputSchema = workflow.outputSchema;
+        }
+
+        pluginMap.get(pluginName).workflows.push(wfData);    
 
         // ===== DETECTION DEPENDENCY =====
         for (const step of workflow.steps) {
@@ -853,7 +861,15 @@ export class PolarisRuntime {
             html += \`<div class="allowed-section"><span class="allowed-label">🛡️ Allowed:</span> No restrictions</div>\`;
           }
         }
-        
+
+        // schema
+        if (w.inputSchema) {
+          html += \`<details><summary>📥 Input Schema</summary><pre>\${JSON.stringify(w.inputSchema, null, 2)}</pre></details>\`;
+        }
+        if (w.outputSchema) {
+          html += \`<details><summary>📤 Output Schema</summary><pre>\${JSON.stringify(w.outputSchema, null, 2)}</pre></details>\`;
+        }
+
         // Steps
         html += \`<div>\${w.steps.map(s => \`<div class="step">▸ \${s.name} → <span class="cap">\${s.useCapability}</span>
         \${s.dependsOn && s.dependsOn.length > 0 ? \`<span class="depends-on">(depends on: \${s.dependsOn.join(', ')})</span>\` : ''}

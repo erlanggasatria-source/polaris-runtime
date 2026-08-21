@@ -18,6 +18,7 @@ describe('Exp Guard', () => {
         name: 'exp/wf-approve',
         description: 'Approve (only if not creator)',
         allowed: { expr: "status === 'waiting_approval' && createdBy !== userId", input: ['status', 'createdBy'], context: ['userId'] },
+        inputSchema: { 'canExecute' : 'meeting data', 'execute' : ['domain', 'id']},
         steps: [{ name: 'Approve', useCapability: 'exp/cap-1' }]
       },
       {

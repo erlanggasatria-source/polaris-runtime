@@ -20,8 +20,10 @@ export interface ICapability {
 
 export interface IWorkflow {
   name: string;
-  description?: string;
+  description?: string;  
   allowed?: IAllowed;
+  inputSchema?: Record<string, any>;   // JSON Schema (opsional)
+  outputSchema?: Record<string, any>;  // JSON Schema (opsional)
   steps: IStep[];
 }
 

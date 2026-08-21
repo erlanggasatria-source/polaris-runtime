@@ -117,7 +117,7 @@ import { PolarisRuntime } from '@polarisruntime/core';
 | Step	        | Executes exactly one capability       |
 | Context	    | Carries data between steps            |
 | Allowed       | Defines who can execute a workflow    |
-| Schema  | Input/output contract for capabilities  |
+| Schema  | Input/output contract for capabilities and workflows  |
 ---
 
 ## 🧩 Example Plugin with Timeout & Allowed Rule
@@ -231,8 +231,30 @@ export const MeetingPlugin: IPlugin = {
     }
   ],
   workflows: [
-    // ...
-  ]
+    {
+      name: 'meeting/wf-create',
+      description: 'Generate a report with timeout protection',      
+      allowed: [ { key: 'role', value: 'admin', source: 'context', operator: 'eq' }],
+      inputSchema: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'Meeting title' },
+          date: { type: 'string', format: 'date' },
+          agenda: { type: 'string', description: 'One per line' }
+        },
+        required: ['title', 'date']
+      },
+      outputSchema: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          status: { type: 'string' }
+        }
+      },
+      steps: [{ name: 'create', useCapability: 'meeting/cap-create' }]
+    }
+  ],
+  
 };
 ```
 
@@ -419,6 +441,11 @@ import { PolarisRuntime } from '@polaris/runtime/dev';
 const runtime = new PolarisRuntime(); // auto-explorer enabled
 runtime.register([...]); // explorer opens automatically
 ```
+
+on node.js explorer creater at `rootDir\explorer`
+
+on browser, explorer pop out, allowed pop out or just click open manual
+
 ---
 
 ## 🧪 Unit Tests
