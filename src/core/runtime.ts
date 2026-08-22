@@ -717,7 +717,7 @@ export class PolarisRuntime {
     return {
       runtime: {
         name: 'Polaris Runtime',
-        version: '2.0.0.alpha.0',
+        version: '2.0.0',
         allowedContextWorkflow: this.allowedContextWorkflow
       },
       statistics: {
