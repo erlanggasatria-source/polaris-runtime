@@ -252,16 +252,6 @@ export class PolarisRuntime {
       }
     }
 
-    state.status = 'completed';
-    state.completedAt = Date.now();
-
-    this.emitEvent(executionId, {
-      type: 'workflow_completed',
-      workflowPath,
-      output: result,
-      timestamp: Date.now()
-    });
-
     if (workflowPath === this.allowedContextWorkflow) {
       const lastStepName = workflow.steps[workflow.steps.length - 1]?.name;
       const contextResult = lastStepName ? context.steps.get(lastStepName) : result;
@@ -269,6 +259,16 @@ export class PolarisRuntime {
         this.updateGlobalContext(contextResult.payload);
       }
     }
+
+    state.status = 'completed';
+    state.completedAt = Date.now();  
+
+    this.emitEvent(executionId, {
+      type: 'workflow_completed',
+      workflowPath,
+      output: result,
+      timestamp: Date.now()
+    });  
 
     logger.info(`✅ Workflow completed: ${workflowPath}`);
     this.scheduleStateCleanup(executionId);
@@ -717,7 +717,7 @@ export class PolarisRuntime {
     return {
       runtime: {
         name: 'Polaris Runtime',
-        version: '2.0.0',
+        version: '2.0.1',
         allowedContextWorkflow: this.allowedContextWorkflow
       },
       statistics: {
