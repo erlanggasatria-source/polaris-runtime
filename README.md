@@ -45,6 +45,19 @@ Its only responsibility is to execute business workflows declared by plugins.
 - ✅ **Speed without chaos** — LLM writes fast, Explorer keeps it understandable
 
 ---
+
+## Polaris Gallery
+
+    Live examples of applications built with Polaris Runtime — across 6 different UI frameworks.
+
+This repository demonstrates that business logic and UI are truly decoupled. Each example runs the same  — the self-describing, grammar-first workflow engine, uses the same plugins, and implements the same workflow — but with a completely different UI layer. [Polaris Gallery](https://github.com/erlanggasatria-source/polaris-gallery)
+
+  REACT, VUE, ANGULAR, SVELTE, SOLID AND pure VANILLA
+
+**One workflow. Six interfaces. Zero duplication.**
+
+---
+
 ## 📚 Documentation
 
 - [Architecture](https://github.com/erlanggasatria-source/polaris-runtime/blob/main/ARCHITECTURE.md) — Design principles and core concepts
@@ -473,6 +486,16 @@ tests/
 └── utils/
     └── mock-plugins.ts          # Shared mock plugins
 ```
+
+---
+
+## 🔗 Related Links
+
+[Polaris Runtime Tutorial Example](https://github.com/erlanggasatria-source/polaris-example) – From basic to advance  examples.
+
+[Polaris Gallery](https://github.com/erlanggasatria-source/polaris-gallery) – repository implementation of 6 framework UI: REACT, VUE, ANGULAR, SVELTE, SOLID and pure VANILLA.
+
+[npm Package](https://www.npmjs.com/package/@polaris-runtime/core) – Install Polaris Runtime in your own projects.
 
 ---
 
