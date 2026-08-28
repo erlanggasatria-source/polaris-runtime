@@ -5,7 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.0] - 2026-08-26
+## [2.0.2] - 2026-08-28
+
+### Fixed
+- **Auto Open Explorer crash in Dev Mode with SVELTE UI Framework**: the problem only ocured on dev mode with Vite SVELTE UI Framework, auto explorer crash.  SVELTE production mode safe. Other Framework REACT, VUE, ANGULAR, SOLID no bug, repository example of all UI framework soon available.
+
+## [2.0.1] - 2026-08-26
 
 ### Fixed
 - **Allowed Workflow Emit Event Completed Before Context Changed**: the problem only ocured when using callback function on subscribe to change something like header with global context.

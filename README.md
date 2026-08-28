@@ -69,15 +69,13 @@ git clone https://github.com/erlanggasatria-source/polaris-runtime.git
 cd polaris-runtime
 npm install
 npm run build
+npm pack
 ```
 
 Then in your project:
-```json
-{
-  "dependencies": {
-    "@polaris-runtime/core": "file:../polaris-runtime"
-  }
-}
+```bash
+cd projectPath
+npm install pathToTarball/polaris-runtime-core-x.x.x.tgz
 ```
 
 ---

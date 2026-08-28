@@ -10,9 +10,6 @@ import {
   IExpressionGuard
 } from './types';
 import { logger, LogLevel } from './logger';
-import * as fs from 'fs';
-import * as path from 'path';
-import { isTypedArray } from 'util/types';
 
 export class PolarisRuntime {
   private pluginMeta: Map<string, { version: string; description: string }> = new Map();
@@ -638,7 +635,7 @@ export class PolarisRuntime {
 
     // ===== BROWSER: virtual HTML di tab baru =====
     if (isBrowser) {
-      this.openExplorerInBrowser();
+      setTimeout(()=>this.openExplorerInBrowser(), 1000);
       return;
     }
 
@@ -717,7 +714,7 @@ export class PolarisRuntime {
     return {
       runtime: {
         name: 'Polaris Runtime',
-        version: '2.0.1',
+        version: '2.0.2',
         allowedContextWorkflow: this.allowedContextWorkflow
       },
       statistics: {
